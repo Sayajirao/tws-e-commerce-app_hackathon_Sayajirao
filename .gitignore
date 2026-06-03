@@ -1,0 +1,30 @@
+# ---- Terraform ----
+# Provider plugins & module cache (large, machine-specific)
+**/.terraform/*
+
+# State files (may contain secrets; we use the S3 backend instead)
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Variable files that often hold secrets
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Plan output files
+*.tfplan
+
+# ---- Secrets / keys ----
+# Auto-generated SSH private key for Jenkins/Bastion — NEVER commit
+terra-key.pem
+*.pem
+*.key
+
+# ---- OS / editor junk ----
+.DS_Store
+Thumbs.db
