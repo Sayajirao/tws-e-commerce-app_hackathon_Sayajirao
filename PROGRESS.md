@@ -64,7 +64,12 @@ Source reference repo: `../tws-e-commerce-app_hackathon` (the original clone).
 
 ## 🔜 Next Steps
 
-- [ ] Commit work in 4 logical commits on branch `feat/terraform-eks`, open PR, merge.
+> **LEFT OFF HERE:** All terraform/ files written + validated (plan = 31 to add),
+> `.gitignore` + `PROGRESS.md` created. **Nothing committed to git yet.** Resume by
+> doing the commits below, then `terraform apply` from the VDI.
+
+- [ ] Commit work in logical commits on branch `feat/terraform-eks`, open PR, merge.
+      (Commit groups: gitignore / eks core / s3 backend / ec2+bastion / PROGRESS.md)
 - [ ] `terraform apply` (from VDI). Watch the OIDC provider step (see constraint above).
 - [ ] After apply: `aws eks --region eu-central-1 update-kubeconfig --name tws-eks-cluster`
       then `kubectl get nodes` (from VDI).
@@ -78,12 +83,70 @@ Source reference repo: `../tws-e-commerce-app_hackathon` (the original clone).
 
 ---
 
+## 🔐 If AWS SSO Credentials Expire (READ THIS FIRST when commands fail)
+
+**Symptom:** AWS/Terraform/kubectl commands fail with errors like
+`ExpiredToken`, `The security token included in the request is expired`,
+`Unable to locate credentials`, or `Error when retrieving token from sso`.
+
+**My SSO profile name:** `common-usecase-pwrusr-235546316205`
+**SSO portal:** https://d-996713358d.awsapps.com/start/#
+
+**Fix — run these (takes ~20 seconds):**
+```bash
+# 1. Re-login via SSO (opens browser → approve the request)
+aws sso login --profile common-usecase-pwrusr-235546316205
+
+# 2. Make every tool use this profile for the session
+export AWS_PROFILE=common-usecase-pwrusr-235546316205
+
+# 3. Confirm it worked — should print account 235546316205
+aws sts get-caller-identity
+```
+
+**Notes:**
+- If the browser doesn't open automatically, copy the URL/code it prints and open manually.
+- To avoid running `export` every time, add this line to `~/.bashrc`:
+  `export AWS_PROFILE=common-usecase-pwrusr-235546316205`
+- Terraform & kubectl need NO changes — they read `AWS_PROFILE` automatically.
+- If `aws sso login` itself fails, the profile may be gone — re-create with
+  `aws configure sso` (start URL + region `eu-central-1` + account + role above).
+
+### ⚠️ If the token expires in the MIDDLE of a long command (IMPORTANT)
+
+`terraform apply` for EKS takes ~15–20 min — long enough that the token can
+expire DURING it, causing the apply to fail partway (e.g. `ExpiredToken`).
+**This is recoverable and safe — do NOT panic, do NOT delete anything.**
+
+Why it's safe: Terraform state lives in S3 (`k8s-buckettttt`) and Terraform is
+idempotent. A half-finished apply just means some resources aren't created yet.
+
+**Recovery:**
+```bash
+# 1. Re-login
+aws sso login --profile common-usecase-pwrusr-235546316205
+export AWS_PROFILE=common-usecase-pwrusr-235546316205
+
+# 2. Simply run apply AGAIN — it reads S3 state and finishes the rest.
+#    It will NOT duplicate anything already created.
+terraform plan      # optional: shows only what's left to create
+terraform apply
+```
+
+- If a previous run left a **state lock** (error: "Error acquiring the state lock"),
+  it's because the killed process didn't release it. Unlock with the LockID shown:
+  `terraform force-unlock <LOCK_ID>`  (only do this if you're sure no apply is running).
+- Same idea for **kubectl**: if a token expires mid-session, just re-login — the
+  kubeconfig auto-fetches a fresh token on the next command. No reconfig needed.
+
+---
+
 ## 🛠️ Daily Startup Routine
 
 ```bash
-# 1. Refresh AWS SSO creds (they expire daily)
-aws sso login --profile <your-sso-profile>
-export AWS_PROFILE=<your-sso-profile>
+# 1. Refresh AWS SSO creds (see section above if anything errors)
+aws sso login --profile common-usecase-pwrusr-235546316205
+export AWS_PROFILE=common-usecase-pwrusr-235546316205
 
 # 2. Verify identity
 aws sts get-caller-identity        # should show account 235546316205
