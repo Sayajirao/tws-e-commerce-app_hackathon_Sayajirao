@@ -51,7 +51,9 @@ resource "aws_instance" "bastion_host" {
     Name = "Bastion-Host"
   }
   root_block_device {
-    volume_size = 20
+    # NOTE (replica): 40 GB minimum — the RCP golden AMI ships a 40 GB root
+    # snapshot, so the volume cannot be smaller (original used 20).
+    volume_size = 40
     volume_type = "gp3"
   }
 }
