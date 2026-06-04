@@ -1,0 +1,31 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: easyshop-ingress
+  namespace: easyshop
+  annotations:
+    alb.ingress.kubernetes.io/group.name: easyshop-app-lb
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    # TODO (replica): replace with YOUR ACM cert ARN in eu-central-1. The original
+    # value pointed at another account (876997124628) / us-east-1 and will NOT work.
+    # Request/import an ACM cert for your domain, then paste its ARN here.
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:eu-central-1:235546316205:certificate/REPLACE-WITH-YOUR-CERT-ID
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/backend-protocol: HTTP
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}, {"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    kubernetes.io/ingress.class: alb
+spec:
+  rules:
+  # TODO (replica): replace with your own domain (must match the ACM cert above).
+  - host: easyshop.devopsdock.site
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: easyshop-service
+            port:
+              number: 80
+
