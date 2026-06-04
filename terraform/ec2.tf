@@ -10,17 +10,28 @@
 #   * Security group references local.vpc_id (no module.vpc).
 ###############################################################################
 
-# Latest Ubuntu 24.04 AMI (Canonical)
+# RCP-approved Ubuntu 24.04 AMI.
+#
+# NOTE (replica): the original used Canonical's PUBLIC Ubuntu AMI (owner
+# 099720109477). This org enforces a Service Control Policy (p-epxkyj6z) that
+# DENIES ec2:RunInstances on public/community AMIs for our role — verified via
+# dry-run (public Ubuntu AND Amazon Linux were both explicitly denied). The org
+# instead shares hardened "golden" AMIs from account 717063266043
+# (AMI-RCP-CENTRALIZED-*). We select the newest approved Ubuntu 24.04 here.
+# Confirmed allowed: a RunInstances --dry-run on this AMI returns DryRunOperation.
 data "aws_ami" "os_image" {
-  owners      = ["099720109477"]
+  owners      = ["717063266043"]
   most_recent = true
   filter {
     name   = "state"
     values = ["available"]
   }
+  # The "???20??" suffix matches the plain monthly builds (e.g. -APR2026, -JUL2025)
+  # and deliberately EXCLUDES the bloated -DEEP-LEARNING-* GPU variant, which
+  # most_recent would otherwise pick.
   filter {
     name   = "name"
-    values = ["ubuntu/images/hvm-ssd-gp3/*24.04-amd64*"]
+    values = ["AMI-RCP-CENTRALIZED-PB-UBUNTU-24.04-???20??"]
   }
 }
 
@@ -85,7 +96,9 @@ resource "aws_instance" "testinstance" {
     Name = "Jenkins-Automate"
   }
   root_block_device {
-    volume_size = 20
+    # NOTE (replica): 40 GB minimum — the RCP golden AMI ships a 40 GB root
+    # snapshot, so the volume cannot be smaller (original used 20).
+    volume_size = 40
     volume_type = "gp3"
   }
 }
