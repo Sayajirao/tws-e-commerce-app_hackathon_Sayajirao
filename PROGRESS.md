@@ -59,17 +59,40 @@ Source reference repo: `../tws-e-commerce-app_hackathon` (the original clone).
   - `install_tools.sh`, `bastion_user_data.sh`, `outputs.tf`
 - [x] `terraform init` (S3 migrate) + `validate` + `plan` all succeed → **31 to add**.
 - [x] Added `.gitignore` (excludes terra-key.pem, .terraform/, *.tfstate).
+- [x] **PR #1 merged** → all `terraform/` code is now on `main`. (Two `docs: progress
+      tracker` commits stayed on `feat/terraform-eks` and never reached `main`.)
+- [x] **Replicated the full application code** into this repo (copied from the
+      reference repo, then verified byte-identical via `diff -rq`):
+  - `src/` (163 files), `public/` (616 files), `.db/` (2 seed files),
+    `scripts/` (migration: migrate-data.ts, Dockerfile.migration, tsconfig.json)
+  - Config: package.json, package-lock.json, yarn.lock, tsconfig.json,
+    next.config.js/.cjs, tailwind.config.ts, postcss.config.js, components.json,
+    .eslintrc.json, ecosystem.config.cjs
+  - Docker: Dockerfile (prod), Dockerfile.dev, docker-compose.yml, .dockerignore
+  - **Secret-safe:** did NOT copy the reference's real `.env` (it had live secrets).
+    Created `.env.example` with placeholders + hardened `.gitignore` (node_modules,
+    .next, .env*, logs). Verified no secret values leaked anywhere in the repo.
+  - **Skipped (your call later):** `LICENSE`, `about.md` (optional portfolio docs).
 
 ---
 
 ## 🔜 Next Steps
 
-> **LEFT OFF HERE:** All terraform/ files written + validated (plan = 31 to add),
-> `.gitignore` + `PROGRESS.md` created. **Nothing committed to git yet.** Resume by
-> doing the commits below, then `terraform apply` from the VDI.
+> **STATUS (updated 2026-06-04, later):** App-source work is essentially DONE.
+> All 6 app-code commits (`e82387c` → `53d8859`) are on `feat/app-source` and
+> **pushed to origin**. PR #2 (terraform) is merged → `main`. The old "EXACT RESUME
+> STEPS" block has been executed and removed. **Only remaining app step: open & merge
+> the `feat/app-source` → `main` PR.** (`gh` CLI not installed locally → use browser.)
 
-- [ ] Commit work in logical commits on branch `feat/terraform-eks`, open PR, merge.
-      (Commit groups: gitignore / eks core / s3 backend / ec2+bastion / PROGRESS.md)
+### ▶ MERGE THE APP-SOURCE PR (do this first next session)
+```bash
+# The 6 app commits + docs are pushed. Just open the PR in a browser and merge:
+#   https://github.com/Sayajirao/tws-e-commerce-app_hackathon_Sayajirao/compare/main...feat/app-source
+```
+- [ ] Open PR `feat/app-source` → `main`, review, merge.
+- [ ] (Optional) decide on `LICENSE` / `about.md` portfolio docs.
+
+### ▶ THEN — the DevOps work (after `terraform apply`, planned after 7 PM)
 - [ ] `terraform apply` (from VDI). Watch the OIDC provider step (see constraint above).
 - [ ] After apply: `aws eks --region eu-central-1 update-kubeconfig --name tws-eks-cluster`
       then `kubectl get nodes` (from VDI).
