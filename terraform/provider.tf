@@ -11,7 +11,7 @@ locals {
   name   = "tws-eks-cluster"
 
   # --- Existing network we are REUSING (provided by the account owner) ---
-  vpc_id     = "vpc-0e5e46dbfb0bba139"
+  vpc_id = "vpc-0e5e46dbfb0bba139"
   subnet_ids = [
     "subnet-0ad263edef26a51fd", # eu-central-1a (private)
     "subnet-0b317785ff8946260", # eu-central-1c (private)
