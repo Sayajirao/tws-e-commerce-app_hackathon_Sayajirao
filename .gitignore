@@ -25,6 +25,34 @@ terra-key.pem
 *.pem
 *.key
 
+# ---- Node.js / Next.js (application) ----
+node_modules/
+/.pnp
+.pnp.js
+.next/
+out/
+build/
+dist/
+next-env.d.ts
+*.tsbuildinfo
+coverage/
+.eslintcache
+
+# Real env files — keep secrets OUT of git. Commit only .env.example.
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
 # ---- OS / editor junk ----
 .DS_Store
 Thumbs.db
+.vscode/
+.idea/
