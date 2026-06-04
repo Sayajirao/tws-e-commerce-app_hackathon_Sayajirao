@@ -33,11 +33,11 @@ module "eks" {
   iam_role_arn    = local.eks_cluster_role_arn
 
   # --- Do not create KMS key / CloudWatch log group (perm-restricted) --------
-  create_kms_key                         = false
-  cluster_encryption_config              = {}
-  create_cloudwatch_log_group            = false
-  cluster_enabled_log_types              = []
-  attach_cluster_encryption_policy       = false
+  create_kms_key                   = false
+  cluster_encryption_config        = {}
+  create_cloudwatch_log_group      = false
+  cluster_enabled_log_types        = []
+  attach_cluster_encryption_policy = false
 
   # Grant your SSO role cluster-admin so kubectl works from the VDI.
   authentication_mode = "API_AND_CONFIG_MAP"
