@@ -18,7 +18,7 @@ metadata:
 spec:
   rules:
   # TODO (replica): replace with your own domain (must match the ACM cert above).
-  - host: easyshop.devopsdock.site
+  - host: easyshop.letsdeployit.com
     http:
       paths:
       - path: /
