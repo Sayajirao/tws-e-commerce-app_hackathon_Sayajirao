@@ -30,6 +30,15 @@ variable "vdi_cidr" {
   default     = "10.157.0.0/16"
 }
 
+# The VDI authenticates to the cluster as its EC2 instance role (kubectl runs
+# `aws eks get-token` with no profile). Grant this role cluster-admin via an EKS
+# access entry so kubectl works from the VDI without SSO login. Observed on the
+# VDI as: arn:aws:sts::235546316205:assumed-role/ecsInstanceRole/<instance-id>.
+variable "vdi_instance_role_arn" {
+  description = "ARN of the VDI EC2 instance role granted EKS cluster-admin"
+  default     = "arn:aws:iam::235546316205:role/ecsInstanceRole"
+}
+
 # --- ORIGINAL (commented out): used only by the Jenkins/Bastion EC2 instances,
 #     which we are not creating on private subnets. -----------------------------
 # variable "ami_id" {
