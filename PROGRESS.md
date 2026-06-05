@@ -73,36 +73,70 @@ Source reference repo: `../tws-e-commerce-app_hackathon` (the original clone).
     Created `.env.example` with placeholders + hardened `.gitignore` (node_modules,
     .next, .env*, logs). Verified no secret values leaked anywhere in the repo.
   - **Skipped (your call later):** `LICENSE`, `about.md` (optional portfolio docs).
+- [x] **App-source PRs merged to `main`** (README also replicated from reference repo).
+- [x] **INFRASTRUCTURE WAS DEPLOYED, THEN DESTROYED** (`terraform apply` succeeded 2026-06-04,
+  then `terraform destroy` ~1h later — likely an overnight cost-saving teardown):
+  - ⚠️ **AS OF 2026-06-05, NO INFRA EXISTS.** Verified: no EKS cluster `tws-eks-cluster` in any
+    region; no Jenkins/Bastion EC2 (running instances in eu-central-1 belong to other projects).
+    S3 tfstate is back to empty (`resources: []`, 794 bytes, serial 12). The descending S3
+    state-version staircase (127KB→…→794B around 2026-06-04 20:10–20:21 UTC) confirms a destroy.
+  - ✅ The apply itself DID succeed earlier: EKS cluster `tws-eks-cluster` (v1.31) + managed node
+    group (1× t3.large, SPOT) + **OIDC/IRSA VERIFIED working** (the big UNVERIFIED risk — resolved)
+    + Jenkins + Bastion EC2 on the RCP golden AMI all came up. Terraform CODE + S3 backend are
+    intact, so a single `terraform apply` rebuilds everything (idempotent by design).
+  - **SCP gotcha solved:** org SCP `p-epxkyj6z` denies the role launching public AMIs; switched
+    `data.aws_ami` to org-shared `AMI-RCP-CENTRALIZED-PB-UBUNTU-24.04-*` (owner 717063266043),
+    bumped EC2 root volume 20→40 GB (golden AMI ships a 40 GB snapshot).
+- [x] **Replicated + ADAPTED `kubernetes/` (12 manifests) + `terraform/apps/` + `modules/`**
+  on branch `feat/k8s-and-addons`, merged to `main`. Env-specific adaptations made, NOT blind
+  copies — placeholders left as TODOs (see Next Steps). Added `terraform/apps/REPLICA-NOTES.md`.
+- [x] **Fixed 2 inherited secret leaks:** removed plaintext secrets from `04-configmap.yaml`;
+  redacted a live Slack webhook from `kube-prom-stack.yaml` (rewrote history so it never existed).
+- [x] **Removed `Co-Authored-By: Claude` trailer** from all commits + `main` (force-pushed).
+  ⚠️ NEVER re-add it. Local `backup/*` branches hold the old history — don't push; delete when ready.
+
+> See **SESSION-LOG-2026-06-05.md** for the full blow-by-blow of the apply saga + secret scrubs.
 
 ---
 
 ## 🔜 Next Steps
 
-> **STATUS (updated 2026-06-04, later):** App-source work is essentially DONE.
-> All 6 app-code commits (`e82387c` → `53d8859`) are on `feat/app-source` and
-> **pushed to origin**. PR #2 (terraform) is merged → `main`. The old "EXACT RESUME
-> STEPS" block has been executed and removed. **Only remaining app step: open & merge
-> the `feat/app-source` → `main` PR.** (`gh` CLI not installed locally → use browser.)
+> **STATUS (updated 2026-06-05):** ⚠️ **INFRA WAS DESTROYED** (see Done section) — the cluster
+> no longer exists. The K8s/add-on CODE is merged to `main` and Terraform code is intact.
+> **Before the DEPLOY phase can start, rebuild infra:** from the **VDI/Bastion**, refresh SSO
+> creds, then `cd terraform && terraform apply` (~15–20 min). Confirm with `aws eks list-clusters
+> --region eu-central-1`. THEN proceed with the DEPLOY phase below. All commands run from the
+> **VDI/Bastion** (private cluster endpoint).
 
-### ▶ MERGE THE APP-SOURCE PR (do this first next session)
-```bash
-# The 6 app commits + docs are pushed. Just open the PR in a browser and merge:
-#   https://github.com/Sayajirao/tws-e-commerce-app_hackathon_Sayajirao/compare/main...feat/app-source
-```
-- [ ] Open PR `feat/app-source` → `main`, review, merge.
-- [ ] (Optional) decide on `LICENSE` / `about.md` portfolio docs.
+### ▶ STEP 0 — REBUILD INFRA (required first; was destroyed)
+0. [ ] From VDI/Bastion: `cd terraform && terraform apply` → recreates EKS + nodes + Jenkins +
+   Bastion. Idempotent; reads S3 state. Verify: `aws eks list-clusters --region eu-central-1`
+   shows `tws-eks-cluster`. (Watch for the same SCP/AMI/IAM gotchas — all already fixed in code.)
 
-### ▶ THEN — the DevOps work (after `terraform apply`, planned after 7 PM)
-- [ ] `terraform apply` (from VDI). Watch the OIDC provider step (see constraint above).
-- [ ] After apply: `aws eks --region eu-central-1 update-kubeconfig --name tws-eks-cluster`
-      then `kubectl get nodes` (from VDI).
-- [ ] Replicate `kubernetes/` manifests (namespace → mongodb → app → service → ingress
-      → hpa → migration job), adapting image names / domain / certs.
-- [ ] Replicate `terraform/apps/` Helm add-ons (ALB controller, EBS CSI, ArgoCD,
-      kube-prometheus-stack) — re-enable IRSA here, fix OIDC ID + region.
+### ▶ DEPLOY PHASE (after STEP 0 — in this order)
+1. [ ] **Connect to the cluster** (from VDI/Bastion):
+   ```bash
+   aws eks --region eu-central-1 update-kubeconfig --name tws-eks-cluster
+   kubectl get nodes        # confirm the node is Ready
+   ```
+2. [ ] **Apply `terraform/apps/` add-ons** (ALB controller, EBS CSI, ArgoCD, monitoring).
+   FIRST fill the OIDC id in `terraform/apps/variables.tf` (cmd in `terraform/apps/REPLICA-NOTES.md`).
+   ⚠️ IRSA risk: `alb_controller.tf` + `ebs_csi_driver.tf` create IAM roles — may hit
+   `iam:CreateRole` deny. If so, admin pre-creates roles + set `create_role = false`.
+3. [ ] **Build + push images** (app from `Dockerfile`, migration from `scripts/Dockerfile.migration`)
+   to a registry (Docker Hub or ECR).
+4. [ ] **Fill the `kubernetes/` TODOs**, then deploy:
+   - `08-easyshop-deployment.yaml` + `12-migration-job.yaml` → your image names
+   - `10-ingress.yaml` → your ACM cert ARN (eu-central-1) + your domain
+   - then: `kubectl apply -f kubernetes/`
+5. [ ] **Verify** the app: pods Ready, ingress gets an ALB address, site loads over HTTPS.
+
+### ▶ THEN — polish / optional
 - [ ] CI/CD (Jenkins on the EC2 we created, or GitHub Actions).
-- [ ] Logging stack (ELK) — optional.
-- [ ] Polish README + architecture diagram for the portfolio.
+- [ ] Replicate still-missing reference files: `Jenkinsfile`, `JENKINS.md`, `LICENSE`,
+      `about.md`, top-level ELK `helm-values/`.
+- [ ] Tailor README to eu-central-1 + add architecture diagram. Fix Slack webhook placeholder.
+- [ ] Clean up: delete local `backup/*` branches; optionally tidy duplicate commits on `main`.
 
 ---
 
@@ -183,5 +217,11 @@ aws sts get-caller-identity        # should show account 235546316205
 
 - `kubectl` works **only from the VDI** (private endpoint).
 - Never commit `terra-key.pem` (it's gitignored — keep it that way).
-- `terraform apply` was **NOT run yet** by Claude — user applies from VDI.
+- ⚠️ **Infra was DESTROYED 2026-06-04 (~20:21 UTC)** — apply succeeded earlier that day, then a
+  `terraform destroy` tore it all down (likely overnight cost-saving). As of 2026-06-05 NO infra
+  exists (verified: no cluster, no EC2, empty S3 state). Must `terraform apply` again to rebuild
+  (see Next Steps STEP 0). State + code intact, so apply is idempotent. User runs apply/kubectl from VDI.
+- **SCP `p-epxkyj6z`**: this role canNOT launch public AMIs (use RCP golden AMIs, owner
+  717063266043) and may not create some IAM resources. Same family as the no-VPC/no-IAM-role limits.
+- **NEVER add `Co-Authored-By: Claude`** (or any AI trailer) to commits/PRs — portfolio repo.
 - State is in S3 + code in GitHub → project survives even if a session resets.
