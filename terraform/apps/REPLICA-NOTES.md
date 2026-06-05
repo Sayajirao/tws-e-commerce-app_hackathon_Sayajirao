@@ -27,11 +27,29 @@ points at it (`aws eks update-kubeconfig ... --name tws-eks-cluster`).
    ```
    Use the bare form (strip `https://`): `oidc.eks.eu-central-1.amazonaws.com/id/XXXX`.
 
-2. **IRSA roles** — `alb_controller.tf` and `ebs_csi_driver.tf` use
-   `iam-assumable-role-with-oidc` with `create_role = true`. ⚠️ Your power-user SSO
-   role may NOT be able to create IAM roles (same constraint noted in PROGRESS.md for
-   the root stack). If apply fails here with an AccessDenied on `iam:CreateRole`, you'll
-   need an admin to pre-create these two roles and switch to `create_role = false`.
+2. **IRSA roles — NOW REUSING EXISTING ROLES (updated 2026-06-06).** The IAM policy +
+   both roles already exist from a PREVIOUS run (created Jan 2026):
+   `AWSLoadBalancerControllerIAMPolicy`, `AmazonEKSLoadBalancerControllerRole`,
+   `AmazonEKS_EBS_CSI_DriverRole`. A fresh `create_role = true` apply failed with
+   `EntityAlreadyExists` (409). So `alb_controller.tf` + `ebs_csi_driver.tf` now reference
+   them **read-only via `data` sources** (create blocks are COMMENTED OUT, not deleted —
+   uncomment to recreate from scratch in a fresh account).
+
+   ⚠️ **One-time trust fix required before apply.** The existing roles' trust policies
+   point at OLD/wrong OIDC (ALB → Pod-Identity `pods.eks.amazonaws.com`; EBS → a dead
+   **us-west-2** cluster). The CURRENT cluster OIDC is
+   `oidc.eks.eu-central-1.amazonaws.com/id/36BC109CD692D28616F3FDDBDAEA8E50`. Fix is
+   NON-DESTRUCTIVE (edits trust doc only, does not delete the role). Run ONCE:
+   ```bash
+   aws iam update-assume-role-policy --role-name AmazonEKSLoadBalancerControllerRole \
+     --policy-document file://trust-alb.json
+   aws iam update-assume-role-policy --role-name AmazonEKS_EBS_CSI_DriverRole \
+     --policy-document file://trust-ebs.json
+   ```
+   (`trust-alb.json` / `trust-ebs.json` are in this dir, pre-filled for the current
+   cluster OIDC + the correct service-account subjects.) The OIDC provider IS registered
+   in IAM, so IRSA works once trust is fixed. If the cluster is ever recreated, the OIDC
+   id changes → regenerate these two JSON files with the new id.
 
 3. **ArgoCD / Grafana ingress certs (optional)** — `helm-values/argocd-values.yaml` and
    `helm-values/kube-prom-stack.yaml` contain a hardcoded ACM cert ARN + account from the
