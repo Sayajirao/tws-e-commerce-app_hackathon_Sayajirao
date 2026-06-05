@@ -130,12 +130,26 @@ Source reference repo: `../tws-e-commerce-app_hackathon` (the original clone).
    aws eks --region eu-central-1 update-kubeconfig --name tws-eks-cluster
    kubectl get nodes        # confirm the node is Ready
    ```
-2. [ ] **Apply `terraform/apps/` add-ons** (ALB controller, EBS CSI, ArgoCD, monitoring).
-   FIRST fill the OIDC id in `terraform/apps/variables.tf` (cmd in `terraform/apps/REPLICA-NOTES.md`).
-   ⚠️ IRSA risk: `alb_controller.tf` + `ebs_csi_driver.tf` create IAM roles — may hit
-   `iam:CreateRole` deny. If so, admin pre-creates roles + set `create_role = false`.
-3. [ ] **Build + push images** (app from `Dockerfile`, migration from `scripts/Dockerfile.migration`)
-   to a registry (Docker Hub or ECR).
+2. [x] **`terraform/apps/` add-ons APPLIED** (2026-06-06) — ArgoCD, ALB controller, EBS CSI,
+   kube-prometheus-stack, AND the ELK stack (Elasticsearch/Filebeat/Kibana) all installed.
+   Applied from the LAPTOP (not VDI) by temporarily enabling the public endpoint. Hard-won fixes:
+   - **IAM already existed** (from a Jan run) → 409 `EntityAlreadyExists`. Switched
+     `alb_controller.tf`/`ebs_csi_driver.tf` to REUSE via `data` sources (create blocks commented,
+     not deleted). NOTE: this proved the SSO role CAN create IAM (the feared deny never happened).
+   - **Stale OIDC trust** on the reused roles (ALB→Pod-Identity, EBS→dead us-west-2 cluster). Fixed
+     non-destructively with `aws iam update-assume-role-policy` (trust JSONs: `apps/trust-*.json`).
+   - **EBS volumes wouldn't provision** (`InvalidVolume.NotFound`): account has EBS
+     encryption-by-default with a CUSTOMER-MANAGED KMS key, and the EBS CSI role had NO `kms:`
+     perms → volumes created then auto-deleted. Fixed: new `AmazonEKS_EBS_CSI_KMS_Policy` (codified
+     in `ebs_csi_driver.tf` + `var.ebs_kms_key_arn`). PVCs then bound → ES started → Kibana succeeded.
+   - **Namespaces**: added `create_namespace = true` to argocd + kube-prom-stack modules.
+   - **Node scale**: bumped node group `t3.large`→`t3.xlarge`, desired_size 1→2 (ELK+Prom+app needs RAM).
+   - Helm release retries left orphans (configmaps/jobs/release-secret) → cleared with `kubectl delete`
+     + `terraform state rm module.kibana...` between attempts.
+   ⚠️ ENDPOINT IS CURRENTLY PUBLIC (locked to operator IP `223.233.87.24/32`). Flip
+   `cluster_public_access` back to false + re-apply ROOT stack when done deploying.
+3. [ ] **Build + push images** — ✅ ALREADY DONE via the Jenkins CI pipeline (`sayajirao/easyshop-app`
+   + `sayajirao/easyshop-migration` on Docker Hub). Pipeline also auto-updates `kubernetes/` image tags.
 4. [ ] **Fill the `kubernetes/` TODOs**, then deploy:
    - `08-easyshop-deployment.yaml` + `12-migration-job.yaml` → your image names
    - `10-ingress.yaml` → your ACM cert ARN (eu-central-1) + your domain
@@ -143,9 +157,17 @@ Source reference repo: `../tws-e-commerce-app_hackathon` (the original clone).
 5. [ ] **Verify** the app: pods Ready, ingress gets an ALB address, site loads over HTTPS.
 
 ### ▶ THEN — polish / optional
-- [~] CI/CD: Jenkins is **installed + running** on the EC2. Still TODO — open the UI from the VDI
-      (`http://<jenkins-private-ip>:8080`, initial pw at `/var/lib/jenkins/secrets/initialAdminPassword`),
-      finish setup, set up `github-credentials` + Docker Hub creds, and run the `Jenkinsfile` pipeline.
+- [x] **CI/CD pipeline GREEN end-to-end** (2026-06-06). Jenkins job `easyshop` runs: build → unit
+      tests → Trivy scan → push BOTH images to Docker Hub (`sayajirao/easyshop-app` +
+      `sayajirao/easyshop-migration`) → update `kubernetes/` image tags + push back to `main`.
+      Fixes applied to get here:
+      - Jenkins job + `Jenkinsfile` `GIT_BRANCH`: `master` → `main` (repo has no master branch).
+      - Docker Hub anonymous pull-rate-limit → `docker login` as jenkins user. ⚠️ Done MANUALLY at
+        `/home/jenkins/.docker/config.json` (NOT `/var/lib/jenkins` — builds run with HOME=/home/jenkins);
+        won't survive a Jenkins/EC2 recreate. TODO: add a Docker-Hub-login stage to the Jenkinsfile.
+      - Shared lib `update_k8s_manifests.groovy`: migration image owner `laxg66` → `sayajirao`;
+        push target → `main`; URL-encode git password (a literal `@` in the old password broke the
+        push URL). ⚠️ Old GitHub password `y@ji@1998` LEAKED in a build log — ROTATED to a PAT.
 - [x] Replicated still-missing reference files: `Jenkinsfile`, `JENKINS.md`, `LICENSE`,
       `about.md`, top-level ELK `helm-values/`, `terraform/README.md` (merged via PRs #7/#8).
       `Jenkinsfile` image names updated to `sayajirao/easyshop-app` + `sayajirao/easyshop-migration`.

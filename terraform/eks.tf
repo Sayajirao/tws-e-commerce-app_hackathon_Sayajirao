@@ -19,9 +19,14 @@ module "eks" {
   cluster_name    = local.name
   cluster_version = var.cluster_version
 
-  # Private-only endpoint (access from VDI inside the VPC network)
-  cluster_endpoint_public_access  = false
-  cluster_endpoint_private_access = true
+  # Endpoint access. Private is always on (VDI reaches it over the TGW). Public is
+  # toggled on TEMPORARILY (var.cluster_public_access) so the apps stack — which uses
+  # the helm/kubernetes providers and must reach the K8s API — can be applied from a
+  # laptop outside the VPC. When public, it is locked to var.cluster_public_access_cidrs
+  # (your IP), NOT 0.0.0.0/0. ⚠️ Flip cluster_public_access back to false when done.
+  cluster_endpoint_public_access       = var.cluster_public_access
+  cluster_endpoint_public_access_cidrs = var.cluster_public_access_cidrs
+  cluster_endpoint_private_access      = true
 
   # Allow the VDI network (outside the VPC, reaching in over the Transit Gateway)
   # to hit the private API endpoint on 443. Without this the cluster security group
@@ -103,8 +108,8 @@ module "eks" {
   eks_managed_node_groups = {
     tws-demo-ng = {
       min_size     = 1
-      max_size     = 3
-      desired_size = 1
+      max_size     = 4
+      desired_size = 2 # 2x t3.xlarge to fit app + argocd + prometheus + ELK
 
       instance_types = [var.node_instance_type]
       capacity_type  = "SPOT"
