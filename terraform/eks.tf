@@ -23,6 +23,20 @@ module "eks" {
   cluster_endpoint_public_access  = false
   cluster_endpoint_private_access = true
 
+  # Allow the VDI network (outside the VPC, reaching in over the Transit Gateway)
+  # to hit the private API endpoint on 443. Without this the cluster security group
+  # only permits node<->control-plane traffic, so kubectl from the VDI times out.
+  cluster_security_group_additional_rules = {
+    vdi_https_ingress = {
+      description = "HTTPS to EKS API from VDI network (via TGW)"
+      protocol    = "tcp"
+      from_port   = 443
+      to_port     = 443
+      type        = "ingress"
+      cidr_blocks = [var.vdi_cidr]
+    }
+  }
+
   # --- Reuse existing network ------------------------------------------------
   vpc_id                   = local.vpc_id
   subnet_ids               = local.subnet_ids
