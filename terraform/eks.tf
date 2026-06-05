@@ -53,11 +53,27 @@ module "eks" {
   cluster_enabled_log_types        = []
   attach_cluster_encryption_policy = false
 
-  # Grant your SSO role cluster-admin so kubectl works from the VDI.
+  # Grant cluster-admin so kubectl works from the VDI.
+  #   * admin_sso  : the SSO role (when authenticating with SSO creds).
+  #   * admin_vdi  : the VDI's EC2 instance role. kubectl on the VDI calls
+  #     `aws eks get-token` with NO profile, so it authenticates as the instance
+  #     role (ecsInstanceRole), not the SSO role. Without this entry the API
+  #     server returns "asked for credentials". Survives cluster re-creation.
   authentication_mode = "API_AND_CONFIG_MAP"
   access_entries = {
     admin_sso = {
       principal_arn = local.admin_principal_arn
+      policy_associations = {
+        admin = {
+          policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          access_scope = {
+            type = "cluster"
+          }
+        }
+      }
+    }
+    admin_vdi = {
+      principal_arn = var.vdi_instance_role_arn
       policy_associations = {
         admin = {
           policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
