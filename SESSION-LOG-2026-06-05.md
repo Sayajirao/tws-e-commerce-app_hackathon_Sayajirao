@@ -6,6 +6,46 @@
 
 ---
 
+## ⚙️ UPDATE 2026-06-05 (latest) — REBUILT INFRA + got kubectl + Jenkins working
+
+Rebuilt with `terraform apply` (cluster ACTIVE again), then fixed a chain of access/boot issues.
+Each was diagnosed live and codified so a future recreate won't hit it.
+
+**1. kubectl from VDI — network (SG) blocker.** `kubectl get nodes` → `dial tcp 10.174.62.154:443:
+i/o timeout`. The VDI (`10.157.139.186`) sits OUTSIDE the cluster VPC (`10.174.62.0/24`) and reaches
+in over the Transit Gateway, but neither cluster SG allowed 443 from it. Fix: added
+`cluster_security_group_additional_rules` in `eks.tf` for `var.vdi_cidr`. Widened to the whole VDI
+`/16` (`10.157.0.0/16`) — NOT a single host IP — so a new VDI IP / recreate stays reachable.
+
+**2. kubectl from VDI — auth blocker.** Error then changed to "the server has asked for the client
+to provide credentials" (= network fixed, authz now). `aws sts get-caller-identity` on the VDI
+returns `assumed-role/ecsInstanceRole/<id>` — kubectl runs `aws eks get-token` with NO profile, so
+it authenticates as the **VDI's EC2 instance role**, not the SSO role the cluster knew. Fix: added a
+second EKS access entry `admin_vdi` (`var.vdi_instance_role_arn = arn:aws:iam::235546316205:role/
+ecsInstanceRole`) with `AmazonEKSClusterAdminPolicy`. → nodes Ready.
+
+**3. Jenkins wouldn't install/start on the Jenkins EC2** (`systemctl status jenkins` = not found).
+cloud-init had finished (Java/Docker/Trivy/snaps installed) but Jenkins failed silently. Three
+separate, stacked problems — all fixed live AND in `install_tools.sh`:
+  - **Expired/rotated APT key + flat-repo quirk.** Repo gave `NO_PUBKEY 7198F4B714ABFC68`; the
+    script's `jenkins.io-2023.key` expired 2026-03-26. Fetching the new key (HTTPS, since the box's
+    TGW egress blocks the keyserver HKP port 11371) into a `signed-by` keyring STILL failed — apt
+    doesn't reliably honour `signed-by` for Jenkins' flat (`binary/`) repo. **Resolution: install the
+    `.deb` directly** (`jenkins_<latestCore>_all.deb`), no repo signing needed.
+  - **Java 17 too old.** Jenkins LTS needs Java 21+ (`Supported Java versions are: [21, 25]`). Script
+    installed `openjdk-17-jre` → now `openjdk-21-jre`.
+  - **`/tmp` is `noexec`** (corporate hardening) → JNA `UnsatisfiedLinkError: failed to map segment
+    from shared object` at boot. Fix: systemd drop-in sets `java.io.tmpdir=/var/lib/jenkins/tmp`
+    (exec-allowed dir under Jenkins home; JNA follows `java.io.tmpdir`).
+  - Bonus cleanups: Trivy repo line was duplicated 3× (`tee -a` → `tee`); dropped deprecated `apt-key`.
+  → Jenkins now `active (running)`.
+
+> ⚠️ `install_tools.sh` only runs on FIRST boot (cloud-init user-data). The fixes above make a fresh
+> EC2 work, but the manual steps were needed on the already-running box. Image/Docker-Hub names in
+> `Jenkinsfile` updated to `sayajirao/easyshop-app` + `sayajirao/easyshop-migration`.
+
+---
+
 ## ⚠️ UPDATE 2026-06-05 (later session) — INFRA WAS DESTROYED
 Resuming the next day, I verified the infra described below as "fully deployed" **no longer
 exists.** Checks run: `aws eks list-clusters` → empty in every region; `describe-instances`

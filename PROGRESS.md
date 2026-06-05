@@ -95,26 +95,37 @@ Source reference repo: `../tws-e-commerce-app_hackathon` (the original clone).
 - [x] **Removed `Co-Authored-By: Claude` trailer** from all commits + `main` (force-pushed).
   ⚠️ NEVER re-add it. Local `backup/*` branches hold the old history — don't push; delete when ready.
 
+- [x] **INFRA REBUILT + cluster reachable from VDI** (2026-06-05, later session). After the
+  overnight destroy, re-ran `terraform apply` → cluster ACTIVE again. Fixed TWO access blockers,
+  both now codified in Terraform (survive future recreates):
+  - **Network:** VDI (`10.157.x.x`, reaches the VPC over the TGW) couldn't hit the private API
+    endpoint — cluster SG had no 443 ingress from it → `i/o timeout`. Added
+    `cluster_security_group_additional_rules` for `var.vdi_cidr` (`10.157.0.0/16`).
+  - **Auth:** kubectl on the VDI authenticates as the VDI's EC2 instance role `ecsInstanceRole`
+    (not the SSO role) → API said "asked for credentials". Added a second access entry
+    `admin_vdi` (`var.vdi_instance_role_arn`) granting it cluster-admin. → `kubectl get nodes` works.
+- [x] **Jenkins installed + running on the Jenkins EC2** (2026-06-05). Boot user-data had failed;
+  fixed live AND in `install_tools.sh` (3 distinct issues, all env-specific to this hardened image):
+  - Jenkins LTS needs **Java 21** (script installed 17 → service refused to start). → `openjdk-21-jre`.
+  - apt rejected the Jenkins flat repo (`NO_PUBKEY 7198F4B714ABFC68`) even with the correct key;
+    apt doesn't honour `signed-by` for that repo layout. → install the **.deb directly**.
+  - `/tmp` is mounted **`noexec`** → JNA `UnsatisfiedLinkError` at boot. → systemd drop-in points
+    `java.io.tmpdir` at `/var/lib/jenkins/tmp` (exec-allowed).
+  - Also de-duplicated the Trivy repo line (`tee -a` → `tee`) and dropped deprecated `apt-key`.
+
 > See **SESSION-LOG-2026-06-05.md** for the full blow-by-blow of the apply saga + secret scrubs.
 
 ---
 
 ## 🔜 Next Steps
 
-> **STATUS (updated 2026-06-05):** ⚠️ **INFRA WAS DESTROYED** (see Done section) — the cluster
-> no longer exists. The K8s/add-on CODE is merged to `main` and Terraform code is intact.
-> **Before the DEPLOY phase can start, rebuild infra:** from the **VDI/Bastion**, refresh SSO
-> creds, then `cd terraform && terraform apply` (~15–20 min). Confirm with `aws eks list-clusters
-> --region eu-central-1`. THEN proceed with the DEPLOY phase below. All commands run from the
-> **VDI/Bastion** (private cluster endpoint).
+> **STATUS (updated 2026-06-05, later session):** ✅ Infra REBUILT, `kubectl get nodes` works from
+> the VDI, and Jenkins is running. SG + access-entry fixes are codified so a future recreate stays
+> reachable. Remaining work is the rest of the **DEPLOY phase** (add-ons → images → app). All
+> commands run from the **VDI/Bastion** (private cluster endpoint); refresh SSO creds first.
 
-### ▶ STEP 0 — REBUILD INFRA (required first; was destroyed)
-0. [ ] From VDI/Bastion: `cd terraform && terraform apply` → recreates EKS + nodes + Jenkins +
-   Bastion. Idempotent; reads S3 state. Verify: `aws eks list-clusters --region eu-central-1`
-   shows `tws-eks-cluster`. (Watch for the same SCP/AMI/IAM gotchas — all already fixed in code.)
-
-### ▶ DEPLOY PHASE (after STEP 0 — in this order)
-1. [ ] **Connect to the cluster** (from VDI/Bastion):
+### ▶ DEPLOY PHASE (in this order)
+1. [x] **Connect to the cluster** (from VDI/Bastion) — DONE, node is Ready:
    ```bash
    aws eks --region eu-central-1 update-kubeconfig --name tws-eks-cluster
    kubectl get nodes        # confirm the node is Ready
@@ -132,9 +143,12 @@ Source reference repo: `../tws-e-commerce-app_hackathon` (the original clone).
 5. [ ] **Verify** the app: pods Ready, ingress gets an ALB address, site loads over HTTPS.
 
 ### ▶ THEN — polish / optional
-- [ ] CI/CD (Jenkins on the EC2 we created, or GitHub Actions).
-- [ ] Replicate still-missing reference files: `Jenkinsfile`, `JENKINS.md`, `LICENSE`,
-      `about.md`, top-level ELK `helm-values/`.
+- [~] CI/CD: Jenkins is **installed + running** on the EC2. Still TODO — open the UI from the VDI
+      (`http://<jenkins-private-ip>:8080`, initial pw at `/var/lib/jenkins/secrets/initialAdminPassword`),
+      finish setup, set up `github-credentials` + Docker Hub creds, and run the `Jenkinsfile` pipeline.
+- [x] Replicated still-missing reference files: `Jenkinsfile`, `JENKINS.md`, `LICENSE`,
+      `about.md`, top-level ELK `helm-values/`, `terraform/README.md` (merged via PRs #7/#8).
+      `Jenkinsfile` image names updated to `sayajirao/easyshop-app` + `sayajirao/easyshop-migration`.
 - [ ] Tailor README to eu-central-1 + add architecture diagram. Fix Slack webhook placeholder.
 - [ ] Clean up: delete local `backup/*` branches; optionally tidy duplicate commits on `main`.
 
