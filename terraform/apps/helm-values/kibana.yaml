@@ -61,14 +61,19 @@ protocol: http
 
 serverHost: "0.0.0.0"
 
-healthCheckPath: "/app/kibana"
+# Readiness probe path — used VERBATIM by the chart probe (no basePath prefix added),
+# so it must include /kibana. /kibana/login returns 200 even with security on, whereas
+# the chart default /app/kibana 404s under rewriteBasePath and /api/status is 401.
+healthCheckPath: "/kibana/login"
 
 # Allows you to add any config files in /usr/share/kibana/config/
 # such as kibana.yml
-kibanaConfig: {}
-#   kibana.yml: |
-#     key:
-#       nestedkey: value
+# Served under /kibana on the shared easyshop ALB (path is not stripped, so Kibana
+# must rewrite its base path for correct asset links + redirects).
+kibanaConfig:
+  kibana.yml: |
+    server.basePath: "/kibana"
+    server.rewriteBasePath: true
 
 # If Pod Security Policy in use it may be required to specify security context as well as service account
 
@@ -136,24 +141,24 @@ service:
   httpPortName: http
 
 ingress:
+  # Served at /kibana on the shared easyshop ALB (HTTP-only, no domain/cert).
   enabled: true
   className: "alb"
   pathtype: Prefix
   annotations:
-    alb.ingress.kubernetes.io/group.name: easyshop-app-lb
+    alb.ingress.kubernetes.io/group.name: easyshop
+    # Low order = sorts BEFORE the app's /* catch-all (order 100) on the shared ALB.
+    alb.ingress.kubernetes.io/group.order: '12'
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/backend-protocol: HTTP
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:876997124628:certificate/b69bb6e7-cbd1-490b-b765-27574080f48c
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}, {"HTTPS":443}]'
-    alb.ingress.kubernetes.io/ssl-redirect: '443'
-  # kubernetes.io/ingress.class: nginx
-  # kubernetes.io/ingress.class: nginx
-  # kubernetes.io/tls-acme: "true"
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+    # Kibana serves from /kibana; /kibana/login returns 200 (status endpoint is 401).
+    alb.ingress.kubernetes.io/healthcheck-path: /kibana/login
+  # No host match — served on the ALB's generated DNS name under /kibana.
   hosts:
-    - host: logs-kibana.devopsdock.site
-      paths:
-        - path: /
+    - paths:
+        - path: /kibana
   #tls: []
   #  - secretName: chart-example-tls
   #    hosts:
