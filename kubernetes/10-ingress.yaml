@@ -4,22 +4,25 @@ metadata:
   name: easyshop-ingress
   namespace: easyshop
   annotations:
-    alb.ingress.kubernetes.io/group.name: easyshop-app-lb
+    alb.ingress.kubernetes.io/group.name: easyshop
+    # Catch-all /* must sort LAST on the shared ALB, or it shadows the dashboard
+    # subpath rules (/grafana, /kibana, ...). High order = lowest priority.
+    alb.ingress.kubernetes.io/group.order: '100'
     alb.ingress.kubernetes.io/scheme: internet-facing
-    # TODO (replica): replace with YOUR ACM cert ARN in eu-central-1. The original
-    # value pointed at another account (876997124628) / us-east-1 and will NOT work.
-    # Request/import an ACM cert for your domain, then paste its ARN here.
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:eu-central-1:235546316205:certificate/REPLACE-WITH-YOUR-CERT-ID
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/backend-protocol: HTTP
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}, {"HTTPS":443}]'
-    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    # Subnets are auto-discovered: the VPC's public subnets are tagged
+    # kubernetes.io/role/elb (see terraform/vpc.tf), so the controller finds them
+    # on its own — no explicit subnet pinning needed.
+    # HTTP-only: no ACM cert / custom domain yet, so the app is served over HTTP at the
+    # ALB's auto-generated DNS name. To add HTTPS later: own a domain, request an ACM
+    # cert (ap-south-1), then add certificate-arn + HTTPS listener + ssl-redirect + host.
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
     kubernetes.io/ingress.class: alb
 spec:
   rules:
-  # TODO (replica): replace with your own domain (must match the ACM cert above).
-  - host: easyshop.letsdeployit.com
-    http:
+  # No host match — serve on any hostname (the ALB's generated DNS name).
+  - http:
       paths:
       - path: /
         pathType: Prefix

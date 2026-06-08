@@ -1,17 +1,15 @@
 ###############################################################################
-# Bastion host EC2  --  PRIVATE SUBNET
+# Bastion host EC2  --  PUBLIC SUBNET (personal account)
 #
-# REPLICA CHANGES vs. the original:
-#   * Launched in an EXISTING PRIVATE subnet (local.subnet_ids[1]) instead of a
-#     created public subnet. Reached from the VDI inside the VPC network.
-#   * Reuses the auto-generated key pair from ec2.tf (aws_key_pair.deployer).
-#   * Security group references local.vpc_id (no module.vpc).
+#   * Launched in a PUBLIC subnet (module.vpc.public_subnets[1]) so you can SSH
+#     in directly using terra-key.pem.
+#   * Reuses the auto-generated key pair + public Ubuntu AMI from ec2.tf.
 ###############################################################################
 
 resource "aws_security_group" "allow_user_bastion" {
   name        = "bastion_host_SG"
   description = "Allow user to connect"
-  vpc_id      = local.vpc_id
+  vpc_id      = module.vpc.vpc_id
   dynamic "ingress" {
     for_each = [
       { description = "port 22 allow", from = 22, to = 22, protocol = "tcp", cidr = ["0.0.0.0/0"] },
@@ -41,19 +39,18 @@ resource "aws_security_group" "allow_user_bastion" {
 }
 
 resource "aws_instance" "bastion_host" {
-  ami                    = data.aws_ami.os_image.id
-  instance_type          = var.node_instance_type
-  key_name               = aws_key_pair.deployer.key_name
-  vpc_security_group_ids = [aws_security_group.allow_user_bastion.id]
-  subnet_id              = local.subnet_ids[1] # private subnet (eu-central-1c)
-  user_data              = file("${path.module}/bastion_user_data.sh")
+  ami                         = data.aws_ami.os_image.id
+  instance_type               = var.instance_type
+  key_name                    = aws_key_pair.deployer.key_name
+  vpc_security_group_ids      = [aws_security_group.allow_user_bastion.id]
+  subnet_id                   = module.vpc.public_subnets[1]
+  associate_public_ip_address = true
+  user_data                   = file("${path.module}/bastion_user_data.sh")
   tags = {
     Name = "Bastion-Host"
   }
   root_block_device {
-    # NOTE (replica): 40 GB minimum — the RCP golden AMI ships a 40 GB root
-    # snapshot, so the volume cannot be smaller (original used 20).
-    volume_size = 40
+    volume_size = 30
     volume_type = "gp3"
   }
 }

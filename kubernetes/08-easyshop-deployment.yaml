@@ -15,11 +15,7 @@ spec:
     spec:
       containers:
         - name: easyshop
-          # TODO (replica): replace with YOUR image built from this repo's Dockerfile
-          # and pushed to your registry (Docker Hub / ECR), e.g.
-          #   <your-dockerhub-user>/easyshop-app:<tag>  or
-          #   235546316205.dkr.ecr.eu-central-1.amazonaws.com/easyshop-app:<tag>
-          image: laxg66/easyshop-app
+          image: sayajirao/easyshop-app:10
           imagePullPolicy: Always
           ports:
             - containerPort: 3000
@@ -29,6 +25,12 @@ spec:
             - secretRef:
                 name: easyshop-secrets
           env:
+            # Next.js standalone (`node server.js`) binds to $HOSTNAME, which k8s sets to
+            # the pod name → it listens only on the pod IP, not loopback. The ALB health
+            # check (hits the pod IP) passes, but `kubectl port-forward` (connects to
+            # 127.0.0.1 inside the pod) is refused. Force all-interfaces binding.
+            - name: HOSTNAME
+              value: "0.0.0.0"
             - name: NEXTAUTH_URL
               valueFrom:
                 configMapKeyRef:

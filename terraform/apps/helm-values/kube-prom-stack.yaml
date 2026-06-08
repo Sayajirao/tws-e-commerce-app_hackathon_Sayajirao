@@ -600,7 +600,9 @@ alertmanager:
   #       {{ end }}
 
   ingress:
-    enabled: true
+    # DISABLED (personal account): foreign-account cert + devopsdock host we don't own.
+    # A bad member here poisoned the shared ALB group before. Use port-forward instead.
+    enabled: false
 
     # For Kubernetes >= 1.18 you should specify the ingress-controller via the field ingressClassName
     # See https://kubernetes.io/blog/2020/04/02/improvements-to-the-ingress-api-in-kubernetes-1.18/#specifying-the-class-of-an-ingress
@@ -1306,13 +1308,20 @@ grafana:
   adminUser: admin
   adminPassword: prom-operator
 
+  # Serve Grafana under /grafana on the shared ALB (path is NOT stripped by ALB,
+  # so Grafana must know its sub-path for correct asset links + redirects).
+  grafana.ini:
+    server:
+      root_url: "%(protocol)s://%(domain)s/grafana"
+      serve_from_sub_path: true
+
   rbac:
     ## If true, Grafana PSPs will be created
     ##
     pspEnabled: false
 
   ingress:
-    ## If true, Grafana Ingress will be created
+    ## Served at /grafana on the shared easyshop ALB (HTTP-only, no domain/cert).
     ##
     enabled: true
 
@@ -1321,15 +1330,17 @@ grafana:
     ##
     ingressClassName: alb
 
-    ## Annotations for Grafana Ingress
+    ## Annotations for Grafana Ingress — shared ALB group "easyshop", HTTP only.
     ##
     annotations:
-      alb.ingress.kubernetes.io/group.name: easyshop-app-lb
+      alb.ingress.kubernetes.io/group.name: easyshop
+      # Low order = sorts BEFORE the app's /* catch-all (order 100) on the shared ALB.
+      alb.ingress.kubernetes.io/group.order: '10'
       alb.ingress.kubernetes.io/scheme: internet-facing
-      alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:876997124628:certificate/b69bb6e7-cbd1-490b-b765-27574080f48c
       alb.ingress.kubernetes.io/target-type: ip
-      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}, {"HTTPS":443}]'
-      alb.ingress.kubernetes.io/ssl-redirect: '443'
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+      # Grafana serves from /grafana; health-check the subpath or targets stay unhealthy.
+      alb.ingress.kubernetes.io/healthcheck-path: /grafana/api/health
       # kubernetes.io/ingress.class: nginx
       # kubernetes.io/tls-acme: "true"
 
@@ -1337,16 +1348,11 @@ grafana:
     ##
     labels: {}
 
-    ## Hostnames.
-    ## Must be provided if Ingress is enable.
-    ##
-    # hosts:
-    #   - grafana.domain.com
-    hosts:
-      - grafana.devopsdock.site
+    ## No host match — served on the ALB's generated DNS name under /grafana.
+    hosts: []
 
     ## Path for grafana ingress
-    path: /
+    path: /grafana
 
     ## TLS configuration for grafana Ingress
     ## Secret must be manually created in the namespace
@@ -3713,6 +3719,8 @@ prometheus:
   #     someoneelse:$apr1$DMZX2Z4q$6SbQIfyuLQd.xmo/P0m2c.
 
   ingress:
+    ## Served at /prometheus on the shared easyshop ALB. Prometheus has NO auth, so
+    ## inbound is restricted to the operator IP via inbound-cidrs (see annotations).
     enabled: true
 
     # For Kubernetes >= 1.18 you should specify the ingress-controller via the field ingressClassName
@@ -3720,29 +3728,26 @@ prometheus:
     ingressClassName: alb
 
     annotations:
-      alb.ingress.kubernetes.io/group.name: easyshop-app-lb
+      alb.ingress.kubernetes.io/group.name: easyshop
+      # Low order = sorts BEFORE the app's /* catch-all (order 100) on the shared ALB.
+      alb.ingress.kubernetes.io/group.order: '11'
       alb.ingress.kubernetes.io/scheme: internet-facing
-      alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:876997124628:certificate/b69bb6e7-cbd1-490b-b765-27574080f48c
       alb.ingress.kubernetes.io/target-type: ip
-      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}, {"HTTPS":443}]'
-      alb.ingress.kubernetes.io/ssl-redirect: '443'
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+      # Prometheus serves from /prometheus; health-check the subpath ready endpoint.
+      alb.ingress.kubernetes.io/healthcheck-path: /prometheus/-/ready
     labels: {}
 
     ## Redirect ingress to an additional defined port on the service
     # servicePort: 8081
 
-    ## Hostnames.
-    ## Must be provided if Ingress is enabled.
-    ##
-    # hosts:
-    #   - prometheus.domain.com
-    hosts:
-      - prometheus.devopsdock.site
+    ## No host match — served on the ALB's generated DNS name under /prometheus.
+    hosts: []
 
     ## Paths to use for ingress rules - one path should match the prometheusSpec.routePrefix
     ##
     paths:
-      - /
+      - /prometheus
 
     ## For Kubernetes >= 1.18 you should specify the pathType (determines how Ingress paths should be matched)
     ## See https://kubernetes.io/blog/2020/04/02/improvements-to-the-ingress-api-in-kubernetes-1.18/#better-path-matching-with-path-types
@@ -4079,8 +4084,8 @@ prometheus:
     prometheusExternalLabelNameClear: false
 
     ## External URL at which Prometheus will be reachable.
-    ##
-    externalUrl: ""
+    ## Served under /prometheus on the shared easyshop ALB (path not stripped).
+    externalUrl: "/prometheus"
 
     ## Define which Nodes the Pods are scheduled on.
     ## ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/#nodeselector
@@ -4273,9 +4278,9 @@ prometheus:
     logFormat: logfmt
 
     ## Prefix used to register routes, overriding externalUrl route.
-    ## Useful for proxies that rewrite URLs.
+    ## Useful for proxies that rewrite URLs. Matches the /prometheus ALB path.
     ##
-    routePrefix: /
+    routePrefix: /prometheus
 
     ## Standard object's metadata. More info: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#metadata
     ## Metadata Labels and Annotations gets propagated to the prometheus pods.

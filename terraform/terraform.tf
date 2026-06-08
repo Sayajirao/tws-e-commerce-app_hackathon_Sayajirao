@@ -1,9 +1,11 @@
 ###############################################################################
 # Terraform settings + required providers
 #
-# NOTE (replica): Using LOCAL state for simplicity (terraform.tfstate on disk).
-# The original S3 remote backend is kept below but COMMENTED OUT. To switch to
-# S3 later, create the bucket first, then uncomment and run `terraform init`.
+# PERSONAL ACCOUNT: state is stored in a NEW S3 bucket that YOU own.
+#   1. Create the bucket FIRST (one-time), in the same region:
+#        aws s3 mb s3://<YOUR_BUCKET> --region ap-south-1
+#   2. Replace <YOUR_TFSTATE_BUCKET> below with that exact name.
+#   3. terraform init   (will initialize the S3 backend)
 ###############################################################################
 
 terraform {
@@ -24,11 +26,12 @@ terraform {
     }
   }
 
-  # --- S3 remote backend (state stored in your bucket) ------------------------
+  # --- S3 remote backend (state stored in YOUR bucket) ------------------------
+  # ⚠️ REPLACE the bucket name below, then run `terraform init`.
   backend "s3" {
-    bucket       = "k8s-buckettttt"
+    bucket       = "easyshop-tfstate-sayajirao"
     key          = "eks/terraform.tfstate"
-    region       = "eu-central-1"
+    region       = "ap-south-1"
     use_lockfile = true
   }
   # ----------------------------------------------------------------------------

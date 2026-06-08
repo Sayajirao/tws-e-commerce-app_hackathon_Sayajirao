@@ -1,7 +1,7 @@
 # 📋 Project Progress — EasyShop on EKS
 
-> **Purpose:** Daily progress tracker + context file. At the start of any session,
-> read this file to get fully caught up. At the end of a session, update it.
+> **Purpose:** Progress tracker + context file. At the start of any session, read this
+> file to get fully caught up. At the end of a session, update it.
 
 ---
 
@@ -12,252 +12,114 @@ Source reference repo: `../tws-e-commerce-app_hackathon` (the original clone).
 
 ---
 
-## 🔑 Environment Facts (do not lose these)
+## 🟢 CURRENT STATUS — DEPLOYED & LIVE on a PERSONAL AWS account (2026-06-08)
+
+After proving everything worked on the Roche corporate account (but being blocked from
+public exposure by corporate controls), the project was redeployed on a **fresh personal
+account** where there are no such limits. **It is fully live and verified.**
 
 | Item | Value |
 |------|-------|
-| AWS Account | `235546316205` |
-| Region | `eu-central-1` |
-| Auth | AWS **SSO** role `AWSReservedSSO_common-usecase-pwrusr` (temp creds, expire daily) |
-| SSO admin role ARN | `arn:aws:iam::235546316205:role/aws-reserved/sso.amazonaws.com/eu-central-1/AWSReservedSSO_common-usecase-pwrusr_ea416c7a30a3ccec` |
-| **Existing VPC** (reused) | `vpc-0e5e46dbfb0bba139` (CIDR `10.174.62.0/24` + secondaries) |
-| **Subnet A** (eu-central-1a, private) | `subnet-0ad263edef26a51fd` |
-| **Subnet C** (eu-central-1c, private) | `subnet-0b317785ff8946260` |
-| Internet egress | via Transit Gateway `tgw-0cacc4d4bea21e576` (no NAT/IGW) |
-| **Existing IAM roles** (reused) | `AmazonEKSClusterRole`, `AmazonEKSNodeRole` |
-| Terraform state | S3 bucket `k8s-buckettttt`, key `eks/terraform.tfstate` |
-| Cluster name | `tws-eks-cluster` (k8s v1.31) |
+| AWS Account | `115019372174` (personal) |
+| Region | `ap-south-1` |
+| Auth | IAM user `sayajiraw_iam_user`, profile **`personal`** in `~/.aws/credentials` |
+| Cluster | `tws-eks-cluster` (k8s v1.31), **PUBLIC endpoint** locked to operator IP |
+| Nodes | 2× `t3.xlarge` SPOT |
+| VPC | created by Terraform `module.vpc` (`vpc-05221f64adbf63c39`), public+private subnets, NAT/IGW |
+| State | root stack → S3 bucket `easyshop-tfstate-sayajirao`; **apps stack → LOCAL** (`terraform/apps/terraform.tfstate`) |
+| Branch | `feat/personal-account` (changes uncommitted — user commits manually) |
 | GitHub repo | `github.com/Sayajirao/tws-e-commerce-app_hackathon_Sayajirao` |
 
----
+**What's running (all verified):** VPC + EKS + Jenkins + Bastion; add-ons (Helm) — ALB
+controller, EBS CSI, ArgoCD, kube-prometheus-stack, ELK; EasyShop app (2 replicas) +
+mongodb-0 (PVC bound), **516 products migrated**.
 
-## ⚙️ Key Decisions & Constraints (the "why")
+**ONE shared ALB** `k8s-easyshop-79768b673f-...ap-south-1.elb.amazonaws.com` serves all
+five by path — every one returns HTTP 200:
+| Path | Service | Login |
+|------|---------|-------|
+| `/` | EasyShop storefront | — |
+| `/grafana` | Grafana | admin / `prom-operator` |
+| `/argocd` | ArgoCD | admin / `argocd-initial-admin-secret` |
+| `/kibana` | Kibana | (no auth) |
+| `/prometheus` | Prometheus | (no auth) |
 
-- **Cannot create a VPC** in this account → reuse existing VPC/subnets via Terraform
-  `locals` (`local.vpc_id`, `local.subnet_ids`) instead of the original `module.vpc`.
-- **Power-user SSO likely cannot create IAM roles** → reuse existing
-  `AmazonEKSClusterRole` + `AmazonEKSNodeRole` (`create_iam_role = false`).
-- **Private-only API endpoint** (`cluster_endpoint_public_access = false`) — reached
-  from the **VDI** inside the VPC network. `kubectl` only works from the VDI.
-- **EC2 (Jenkins + Bastion) placed in private subnets** (user can reach via VDI/browser).
-  SSH key auto-generated → `terraform/terra-key.pem` (gitignored, never commit).
-- **KMS encryption + CloudWatch log group DISABLED** (extra perms a power-user lacks).
-- **OIDC provider (`enable_irsa`) still ON** — needs `iam:CreateOpenIDConnectProvider`.
-  ⚠️ UNVERIFIED whether the role can create it. If `apply` fails here, set
-  `enable_irsa = false` and re-enable at the Helm add-ons stage.
-
----
-
-## ✅ Done
-
-- [x] Understood original repo (app, Docker, k8s/, terraform/, helm-values/, CI/CD).
-- [x] Inspected AWS account (VPC, subnets, routing, IAM roles, S3 bucket) — all verified.
-- [x] Wrote `terraform/` replica reusing existing VPC/subnets/roles:
-  - `provider.tf` (locals), `terraform.tf` (S3 backend + providers), `variables.tf`
-  - `vpc.tf` (original module commented out), `eks.tf` (cluster + node group)
-  - `ec2.tf` (Jenkins, private subnet, auto SSH key), `bastion_ec2.tf` (private)
-  - `install_tools.sh`, `bastion_user_data.sh`, `outputs.tf`
-- [x] `terraform init` (S3 migrate) + `validate` + `plan` all succeed → **31 to add**.
-- [x] Added `.gitignore` (excludes terra-key.pem, .terraform/, *.tfstate).
-- [x] **PR #1 merged** → all `terraform/` code is now on `main`. (Two `docs: progress
-      tracker` commits stayed on `feat/terraform-eks` and never reached `main`.)
-- [x] **Replicated the full application code** into this repo (copied from the
-      reference repo, then verified byte-identical via `diff -rq`):
-  - `src/` (163 files), `public/` (616 files), `.db/` (2 seed files),
-    `scripts/` (migration: migrate-data.ts, Dockerfile.migration, tsconfig.json)
-  - Config: package.json, package-lock.json, yarn.lock, tsconfig.json,
-    next.config.js/.cjs, tailwind.config.ts, postcss.config.js, components.json,
-    .eslintrc.json, ecosystem.config.cjs
-  - Docker: Dockerfile (prod), Dockerfile.dev, docker-compose.yml, .dockerignore
-  - **Secret-safe:** did NOT copy the reference's real `.env` (it had live secrets).
-    Created `.env.example` with placeholders + hardened `.gitignore` (node_modules,
-    .next, .env*, logs). Verified no secret values leaked anywhere in the repo.
-  - **Skipped (your call later):** `LICENSE`, `about.md` (optional portfolio docs).
-- [x] **App-source PRs merged to `main`** (README also replicated from reference repo).
-- [x] **INFRASTRUCTURE WAS DEPLOYED, THEN DESTROYED** (`terraform apply` succeeded 2026-06-04,
-  then `terraform destroy` ~1h later — likely an overnight cost-saving teardown):
-  - ⚠️ **AS OF 2026-06-05, NO INFRA EXISTS.** Verified: no EKS cluster `tws-eks-cluster` in any
-    region; no Jenkins/Bastion EC2 (running instances in eu-central-1 belong to other projects).
-    S3 tfstate is back to empty (`resources: []`, 794 bytes, serial 12). The descending S3
-    state-version staircase (127KB→…→794B around 2026-06-04 20:10–20:21 UTC) confirms a destroy.
-  - ✅ The apply itself DID succeed earlier: EKS cluster `tws-eks-cluster` (v1.31) + managed node
-    group (1× t3.large, SPOT) + **OIDC/IRSA VERIFIED working** (the big UNVERIFIED risk — resolved)
-    + Jenkins + Bastion EC2 on the RCP golden AMI all came up. Terraform CODE + S3 backend are
-    intact, so a single `terraform apply` rebuilds everything (idempotent by design).
-  - **SCP gotcha solved:** org SCP `p-epxkyj6z` denies the role launching public AMIs; switched
-    `data.aws_ami` to org-shared `AMI-RCP-CENTRALIZED-PB-UBUNTU-24.04-*` (owner 717063266043),
-    bumped EC2 root volume 20→40 GB (golden AMI ships a 40 GB snapshot).
-- [x] **Replicated + ADAPTED `kubernetes/` (12 manifests) + `terraform/apps/` + `modules/`**
-  on branch `feat/k8s-and-addons`, merged to `main`. Env-specific adaptations made, NOT blind
-  copies — placeholders left as TODOs (see Next Steps). Added `terraform/apps/REPLICA-NOTES.md`.
-- [x] **Fixed 2 inherited secret leaks:** removed plaintext secrets from `04-configmap.yaml`;
-  redacted a live Slack webhook from `kube-prom-stack.yaml` (rewrote history so it never existed).
-- [x] **Removed `Co-Authored-By: Claude` trailer** from all commits + `main` (force-pushed).
-  ⚠️ NEVER re-add it. Local `backup/*` branches hold the old history — don't push; delete when ready.
-
-- [x] **INFRA REBUILT + cluster reachable from VDI** (2026-06-05, later session). After the
-  overnight destroy, re-ran `terraform apply` → cluster ACTIVE again. Fixed TWO access blockers,
-  both now codified in Terraform (survive future recreates):
-  - **Network:** VDI (`10.157.x.x`, reaches the VPC over the TGW) couldn't hit the private API
-    endpoint — cluster SG had no 443 ingress from it → `i/o timeout`. Added
-    `cluster_security_group_additional_rules` for `var.vdi_cidr` (`10.157.0.0/16`).
-  - **Auth:** kubectl on the VDI authenticates as the VDI's EC2 instance role `ecsInstanceRole`
-    (not the SSO role) → API said "asked for credentials". Added a second access entry
-    `admin_vdi` (`var.vdi_instance_role_arn`) granting it cluster-admin. → `kubectl get nodes` works.
-- [x] **Jenkins installed + running on the Jenkins EC2** (2026-06-05). Boot user-data had failed;
-  fixed live AND in `install_tools.sh` (3 distinct issues, all env-specific to this hardened image):
-  - Jenkins LTS needs **Java 21** (script installed 17 → service refused to start). → `openjdk-21-jre`.
-  - apt rejected the Jenkins flat repo (`NO_PUBKEY 7198F4B714ABFC68`) even with the correct key;
-    apt doesn't honour `signed-by` for that repo layout. → install the **.deb directly**.
-  - `/tmp` is mounted **`noexec`** → JNA `UnsatisfiedLinkError` at boot. → systemd drop-in points
-    `java.io.tmpdir` at `/var/lib/jenkins/tmp` (exec-allowed).
-  - Also de-duplicated the Trivy repo line (`tee -a` → `tee`) and dropped deprecated `apt-key`.
-
-> See **SESSION-LOG-2026-06-05.md** for the full blow-by-blow of the apply saga + secret scrubs.
+Full runbook: **`DEPLOY-PERSONAL-ACCOUNT.md`**.
 
 ---
 
-## 🔜 Next Steps
+## 🔜 What's left
 
-> **STATUS (updated 2026-06-05, later session):** ✅ Infra REBUILT, `kubectl get nodes` works from
-> the VDI, and Jenkins is running. SG + access-entry fixes are codified so a future recreate stays
-> reachable. Remaining work is the rest of the **DEPLOY phase** (add-ons → images → app). All
-> commands run from the **VDI/Bastion** (private cluster endpoint); refresh SSO creds first.
-
-### ▶ DEPLOY PHASE (in this order)
-1. [x] **Connect to the cluster** (from VDI/Bastion) — DONE, node is Ready:
-   ```bash
-   aws eks --region eu-central-1 update-kubeconfig --name tws-eks-cluster
-   kubectl get nodes        # confirm the node is Ready
-   ```
-2. [x] **`terraform/apps/` add-ons APPLIED** (2026-06-06) — ArgoCD, ALB controller, EBS CSI,
-   kube-prometheus-stack, AND the ELK stack (Elasticsearch/Filebeat/Kibana) all installed.
-   Applied from the LAPTOP (not VDI) by temporarily enabling the public endpoint. Hard-won fixes:
-   - **IAM already existed** (from a Jan run) → 409 `EntityAlreadyExists`. Switched
-     `alb_controller.tf`/`ebs_csi_driver.tf` to REUSE via `data` sources (create blocks commented,
-     not deleted). NOTE: this proved the SSO role CAN create IAM (the feared deny never happened).
-   - **Stale OIDC trust** on the reused roles (ALB→Pod-Identity, EBS→dead us-west-2 cluster). Fixed
-     non-destructively with `aws iam update-assume-role-policy` (trust JSONs: `apps/trust-*.json`).
-   - **EBS volumes wouldn't provision** (`InvalidVolume.NotFound`): account has EBS
-     encryption-by-default with a CUSTOMER-MANAGED KMS key, and the EBS CSI role had NO `kms:`
-     perms → volumes created then auto-deleted. Fixed: new `AmazonEKS_EBS_CSI_KMS_Policy` (codified
-     in `ebs_csi_driver.tf` + `var.ebs_kms_key_arn`). PVCs then bound → ES started → Kibana succeeded.
-   - **Namespaces**: added `create_namespace = true` to argocd + kube-prom-stack modules.
-   - **Node scale**: bumped node group `t3.large`→`t3.xlarge`, desired_size 1→2 (ELK+Prom+app needs RAM).
-   - Helm release retries left orphans (configmaps/jobs/release-secret) → cleared with `kubectl delete`
-     + `terraform state rm module.kibana...` between attempts.
-   ⚠️ ENDPOINT IS CURRENTLY PUBLIC (locked to operator IP `223.233.87.24/32`). Flip
-   `cluster_public_access` back to false + re-apply ROOT stack when done deploying.
-3. [ ] **Build + push images** — ✅ ALREADY DONE via the Jenkins CI pipeline (`sayajirao/easyshop-app`
-   + `sayajirao/easyshop-migration` on Docker Hub). Pipeline also auto-updates `kubernetes/` image tags.
-4. [ ] **Fill the `kubernetes/` TODOs**, then deploy:
-   - `08-easyshop-deployment.yaml` + `12-migration-job.yaml` → your image names
-   - `10-ingress.yaml` → your ACM cert ARN (eu-central-1) + your domain
-   - then: `kubectl apply -f kubernetes/`
-5. [ ] **Verify** the app: pods Ready, ingress gets an ALB address, site loads over HTTPS.
-
-### ▶ THEN — polish / optional
-- [x] **CI/CD pipeline GREEN end-to-end** (2026-06-06). Jenkins job `easyshop` runs: build → unit
-      tests → Trivy scan → push BOTH images to Docker Hub (`sayajirao/easyshop-app` +
-      `sayajirao/easyshop-migration`) → update `kubernetes/` image tags + push back to `main`.
-      Fixes applied to get here:
-      - Jenkins job + `Jenkinsfile` `GIT_BRANCH`: `master` → `main` (repo has no master branch).
-      - Docker Hub anonymous pull-rate-limit → `docker login` as jenkins user. ⚠️ Done MANUALLY at
-        `/home/jenkins/.docker/config.json` (NOT `/var/lib/jenkins` — builds run with HOME=/home/jenkins);
-        won't survive a Jenkins/EC2 recreate. TODO: add a Docker-Hub-login stage to the Jenkinsfile.
-      - Shared lib `update_k8s_manifests.groovy`: migration image owner `laxg66` → `sayajirao`;
-        push target → `main`; URL-encode git password (a literal `@` in the old password broke the
-        push URL). ⚠️ Old GitHub password `y@ji@1998` LEAKED in a build log — ROTATED to a PAT.
-- [x] Replicated still-missing reference files: `Jenkinsfile`, `JENKINS.md`, `LICENSE`,
-      `about.md`, top-level ELK `helm-values/`, `terraform/README.md` (merged via PRs #7/#8).
-      `Jenkinsfile` image names updated to `sayajirao/easyshop-app` + `sayajirao/easyshop-migration`.
-- [ ] Tailor README to eu-central-1 + add architecture diagram. Fix Slack webhook placeholder.
-- [ ] Clean up: delete local `backup/*` branches; optionally tidy duplicate commits on `main`.
+- [ ] **Commit the work** on `feat/personal-account` (user does this manually — small
+      conventional commits, NO Claude trailer). Uncommitted: `terraform/**` refactor, all
+      `terraform/apps/helm-values/*` dashboard + shared-ALB fixes, `kubernetes/10-ingress.yaml`
+      (`group.order`), `DEPLOY-PERSONAL-ACCOUNT.md`, this file, deleted Roche leftovers + session logs.
+      `05-secrets.yaml` is placeholders in git (real secrets live-only) — verified safe to commit.
+- [ ] **💰 TEAR DOWN when done demoing** (~$0.50–1/hr: 2 nodes + NAT + 2 EC2 + EBS + ALB):
+      `kubectl delete -f kubernetes/` → `terraform destroy` in `apps/` → `terraform destroy` in root.
+- [ ] *(optional)* HTTPS: own a domain, ACM cert in ap-south-1, add cert ARN + HTTPS listener to the
+      app + dashboard ingresses (switch the whole shared `group.name: easyshop` to HTTPS together).
+- [ ] *(optional)* Lock Prometheus/Kibana down (they're public + no-auth on the shared ALB) — separate
+      IP-restricted ALB or port-forward-only.
 
 ---
 
-## 🔐 If AWS SSO Credentials Expire (READ THIS FIRST when commands fail)
+## 🔁 Daily startup (personal account)
 
-**Symptom:** AWS/Terraform/kubectl commands fail with errors like
-`ExpiredToken`, `The security token included in the request is expired`,
-`Unable to locate credentials`, or `Error when retrieving token from sso`.
-
-**My SSO profile name:** `common-usecase-pwrusr-235546316205`
-**SSO portal:** https://d-996713358d.awsapps.com/start/#
-
-**Fix — run these (takes ~20 seconds):**
-```bash
-# 1. Re-login via SSO (opens browser → approve the request)
-aws sso login --profile common-usecase-pwrusr-235546316205
-
-# 2. Make every tool use this profile for the session
-export AWS_PROFILE=common-usecase-pwrusr-235546316205
-
-# 3. Confirm it worked — should print account 235546316205
-aws sts get-caller-identity
-```
-
-**Notes:**
-- If the browser doesn't open automatically, copy the URL/code it prints and open manually.
-- To avoid running `export` every time, add this line to `~/.bashrc`:
-  `export AWS_PROFILE=common-usecase-pwrusr-235546316205`
-- Terraform & kubectl need NO changes — they read `AWS_PROFILE` automatically.
-- If `aws sso login` itself fails, the profile may be gone — re-create with
-  `aws configure sso` (start URL + region `eu-central-1` + account + role above).
-
-### ⚠️ If the token expires in the MIDDLE of a long command (IMPORTANT)
-
-`terraform apply` for EKS takes ~15–20 min — long enough that the token can
-expire DURING it, causing the apply to fail partway (e.g. `ExpiredToken`).
-**This is recoverable and safe — do NOT panic, do NOT delete anything.**
-
-Why it's safe: Terraform state lives in S3 (`k8s-buckettttt`) and Terraform is
-idempotent. A half-finished apply just means some resources aren't created yet.
-
-**Recovery:**
-```bash
-# 1. Re-login
-aws sso login --profile common-usecase-pwrusr-235546316205
-export AWS_PROFILE=common-usecase-pwrusr-235546316205
-
-# 2. Simply run apply AGAIN — it reads S3 state and finishes the rest.
-#    It will NOT duplicate anything already created.
-terraform plan      # optional: shows only what's left to create
-terraform apply
-```
-
-- If a previous run left a **state lock** (error: "Error acquiring the state lock"),
-  it's because the killed process didn't release it. Unlock with the LockID shown:
-  `terraform force-unlock <LOCK_ID>`  (only do this if you're sure no apply is running).
-- Same idea for **kubectl**: if a token expires mid-session, just re-login — the
-  kubeconfig auto-fetches a fresh token on the next command. No reconfig needed.
-
----
-
-## 🛠️ Daily Startup Routine
-
-```bash
-# 1. Refresh AWS SSO creds (see section above if anything errors)
-aws sso login --profile common-usecase-pwrusr-235546316205
-export AWS_PROFILE=common-usecase-pwrusr-235546316205
-
-# 2. Verify identity
-aws sts get-caller-identity        # should show account 235546316205
-
-# 3. Tell Claude: "read PROGRESS.md and let's continue"
+```powershell
+# PowerShell — set the profile for the session (NOT the bash AWS_PROFILE=x prefix)
+$env:AWS_PROFILE = "personal"
+aws sts get-caller-identity                  # must show 115019372174
+aws eks --region ap-south-1 update-kubeconfig --name tws-eks-cluster
+kubectl get nodes                            # both Ready
+# If kubectl/EKS API times out: your IP changed — update cluster_public_access_cidrs in
+# terraform/variables.tf (curl checkip.amazonaws.com) and `terraform apply` the root stack.
 ```
 
 ---
 
-## ⚠️ Gotchas / Reminders
+## 🧠 Hard-won lessons (the "why", so a redeploy doesn't rediscover them)
 
-- `kubectl` works **only from the VDI** (private endpoint).
-- Never commit `terra-key.pem` (it's gitignored — keep it that way).
-- ⚠️ **Infra was DESTROYED 2026-06-04 (~20:21 UTC)** — apply succeeded earlier that day, then a
-  `terraform destroy` tore it all down (likely overnight cost-saving). As of 2026-06-05 NO infra
-  exists (verified: no cluster, no EC2, empty S3 state). Must `terraform apply` again to rebuild
-  (see Next Steps STEP 0). State + code intact, so apply is idempotent. User runs apply/kubectl from VDI.
-- **SCP `p-epxkyj6z`**: this role canNOT launch public AMIs (use RCP golden AMIs, owner
-  717063266043) and may not create some IAM resources. Same family as the no-VPC/no-IAM-role limits.
+**Add-ons are Helm charts deployed by Terraform** (`helm_release`), never installed on the EC2s.
+Edit `terraform/apps/helm-values/*.yaml` then `terraform apply` — don't `helm install` by hand.
+
+**ALB controller values must match THIS cluster** (`alb_controller-1.13.3.yaml`): `region:
+ap-south-1`, `vpcId: <the created VPC>`, `clusterName: tws-eks-cluster`. Wrong values CrashLoop
+the controller or make it reject the subnets as "tagged for other clusters".
+
+**Shared-ALB dashboards (the gotcha chain — each blocked the whole ALB group):**
+1. ArgoCD chart defaults to a **GRPC** target group → can't attach to HTTP listener → poisons the
+   group. Fix: `server.ingress.aws.backendProtocolVersion: HTTP1`.
+2. ArgoCD `global.domain` default adds a host-header condition that never matches the ALB DNS name.
+   Fix: `global.domain: ""`.
+3. Each app needs **subpath config** (root_url / basehref / basePath / routePrefix) or it 404s on assets.
+4. Each ingress needs a **health-check path on its subpath** (default `/` → unhealthy → ALB 404).
+5. **#1 cause of 404:** the app's `/*` catch-all must sort LAST — `group.order` app `100`,
+   dashboards `10`–`13`. (A 404 with `X-Powered-By: Next.js` = the path hit the app, fix order.)
+6. Kibana chart 8.5.1 probe uses `healthCheckPath` verbatim → set `/kibana/login`. And every apply
+   re-runs a token hook that **409s** on the existing `kibana-kibana-es-token` secret → delete that
+   secret + the `pre-install-kibana-kibana` job/cm/sa/role/rolebinding, re-apply, then
+   `rollout restart deployment kibana-kibana`.
+
+---
+
+## 📜 History (Roche account — done, now superseded)
+
+The project was first built on the Roche corporate account (`235546316205`, eu-central-1) and
+proven fully working (GET / → 200, /api/products → 516 products), but every public-exposure path
+was blocked. The pivot to the personal account (2026-06-07) flipped these workarounds back to the
+"proper" design. Roche-era specifics (reused VPC/IAM via data sources, private-only endpoint + VDI
+access, EBS customer-KMS policy, Cloudflare-only NACL, hardened-AMI/Jenkins boot fixes, the
+`Co-Authored-By: Claude` history scrub) are captured in Claude memory ([[easyshop-eks-project]])
+rather than here. Key carry-overs kept regardless of account: MongoDB
+`public.ecr.aws/docker/library/mongo:8.0` (Docker Hub rate-limit dodge) and `HOSTNAME=0.0.0.0` on
+the app deployment (Next standalone correctness). CI/CD: Jenkins pipeline builds + pushes
+`sayajirao/easyshop-app` + `sayajirao/easyshop-migration` to Docker Hub.
+
+---
+
+## ⚠️ Standing reminders
+- **PowerShell**, profile `personal`. Don't overwrite `[default]` in `~/.aws/credentials`.
+- Never commit `terraform/terra-key.pem` (gitignored) or real secrets.
 - **NEVER add `Co-Authored-By: Claude`** (or any AI trailer) to commits/PRs — portfolio repo.
-- State is in S3 + code in GitHub → project survives even if a session resets.
+- State (S3 root + local apps) + code in GitHub → project survives a session reset.
