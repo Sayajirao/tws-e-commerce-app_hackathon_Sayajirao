@@ -15,10 +15,9 @@ terraform {
   }
 }
 
-# Configure the AWS Provider
-# NOTE (replica): region changed from the original ap-south-1 to eu-central-1.
+# Configure the AWS Provider (personal account: ap-south-1).
 provider "aws" {
-  region = "eu-central-1"
+  region = "ap-south-1"
 }
 
 

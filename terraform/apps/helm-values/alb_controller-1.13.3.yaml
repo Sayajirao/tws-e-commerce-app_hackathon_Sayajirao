@@ -121,7 +121,9 @@ certManager:
   renewBefore:
 
 # The name of the Kubernetes cluster. A non-empty value is required
-clusterName: "dock-eks-cluster"
+# Must match the actual cluster (terraform/provider.tf local.name) so the controller
+# accepts subnets tagged kubernetes.io/cluster/tws-eks-cluster during ALB auto-discovery.
+clusterName: "tws-eks-cluster"
 
 # cluster contains configurations specific to the kubernetes cluster
 cluster:
@@ -161,12 +163,13 @@ ingressClassParams:
 createIngressClassResource: true
 
 # The AWS region for the kubernetes cluster. Set to use KIAM or kube2iam for example.
-# NOTE (replica): changed from original ap-south-1.
-region: "eu-central-1"
+# PERSONAL ACCOUNT: ap-south-1 (matches terraform/variables.tf aws_region).
+region: "ap-south-1"
 
 # The VPC ID for the Kubernetes cluster. Set this manually when your pods are unable to use the metadata service to determine this automatically
-# NOTE (replica): set to the existing VPC we reuse (see terraform/provider.tf local.vpc_id).
-vpcId: "vpc-0e5e46dbfb0bba139"
+# PERSONAL ACCOUNT: set explicitly to the VPC we create (terraform/vpc.tf module.vpc).
+# IMDS auto-discovery (vpcId: "") times out on EKS, so the controller CrashLoops — pin it.
+vpcId: "vpc-05221f64adbf63c39"
 
 # This is alternative to vpcId. Set this when your pods are unable to use the metadata service to determine VPC automatically.
 vpcTags: {}
