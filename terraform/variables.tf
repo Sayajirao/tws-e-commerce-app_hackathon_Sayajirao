@@ -14,7 +14,9 @@ variable "cluster_version" {
 
 variable "node_instance_type" {
   description = "Instance type for the EKS managed node group"
-  default     = "t3.large"
+  # Bumped t3.large -> t3.xlarge (4 vCPU / 16 GB): the single t3.large could not fit
+  # the app + ArgoCD + kube-prometheus-stack + ELK (Elasticsearch/Kibana) at once.
+  default = "t3.xlarge"
 }
 
 # CIDR allowed to reach the PRIVATE EKS API endpoint (port 443). The VDI sits
@@ -37,6 +39,23 @@ variable "vdi_cidr" {
 variable "vdi_instance_role_arn" {
   description = "ARN of the VDI EC2 instance role granted EKS cluster-admin"
   default     = "arn:aws:iam::235546316205:role/ecsInstanceRole"
+}
+
+# TEMPORARY public access to the EKS API endpoint. Default false (private-only). Set
+# true only when you need to run the apps stack (helm/kubernetes providers) from a
+# machine outside the VPC, then flip back to false. The private endpoint is always on.
+variable "cluster_public_access" {
+  description = "Enable public access to the EKS API endpoint (temporary; default off)"
+  type        = bool
+  default     = false
+}
+
+# When public access is on, restrict it to these CIDRs (NOT 0.0.0.0/0). Defaults to the
+# operator's current public IP. Update if your IP changes.
+variable "cluster_public_access_cidrs" {
+  description = "CIDRs allowed to reach the EKS API when public access is enabled"
+  type        = list(string)
+  default     = ["223.233.87.24/32"]
 }
 
 # --- ORIGINAL (commented out): used only by the Jenkins/Bastion EC2 instances,
