@@ -7,7 +7,7 @@ const LoginPage = () => {
     <div className="max-w-xl px-default mx-auto pt-12 pb-20">
       <div className="flex text-center flex-col items-center">
         <Logo />
-        <p className="my-3">Login with your email & password</p>
+        <p className="my-3">Sign in with your email & password</p>
       </div>
       <LoginForm />
       <div className="flex-1 h-0.5 bg-muted my-6"></div>
