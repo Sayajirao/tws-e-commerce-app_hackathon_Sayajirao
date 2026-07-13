@@ -7,5 +7,5 @@
 # Strip the leading "https://" — the IRSA module expects the bare host/path form.
 variable "idp_provider_url" {
   description = "Bare OIDC provider URL (no https://) of the EKS cluster, for IRSA"
-  default     = "oidc.eks.ap-south-1.amazonaws.com/id/D582D078DDCEDE6CF71227FEA833E891"
+  default     = "oidc.eks.ap-south-1.amazonaws.com/id/DB8FB44FDCBF025490AC25E10296B4C0"
 }

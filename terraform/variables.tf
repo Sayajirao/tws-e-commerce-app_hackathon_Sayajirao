@@ -24,13 +24,7 @@ variable "node_instance_type" {
 variable "cluster_public_access_cidrs" {
   description = "CIDRs allowed to reach the public EKS API endpoint"
   type        = list(string)
-  default     = ["223.233.82.59/32"]
-}
-
-# EC2 instance type for the Jenkins + Bastion hosts.
-variable "instance_type" {
-  description = "Instance type for the Jenkins/Bastion EC2 instances"
-  default     = "t3.medium"
+  default     = ["223.233.80.129/32"]
 }
 
 variable "my_enviroment" {
