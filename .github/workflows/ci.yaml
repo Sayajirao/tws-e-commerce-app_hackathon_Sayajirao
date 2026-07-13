@@ -103,7 +103,7 @@ jobs:
       # Fails the build on HIGH/CRITICAL for services flagged scan: true.
       - name: Trivy scan ${{ matrix.service.name }}
         if: ${{ matrix.service.scan }}
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.29.0
         with:
           image-ref: ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service.name }}:${{ steps.tag.outputs.value }}
           format: table
