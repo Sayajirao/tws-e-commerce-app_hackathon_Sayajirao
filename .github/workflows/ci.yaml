@@ -1,0 +1,107 @@
+###############################################################################
+# CI — build, scan, push images, then bump the image tag in the k8s manifests.
+#
+# This is the CI half only. CD is handled by Argo CD (argocd/easyshop-application.yaml),
+# which watches kubernetes/ in this repo and syncs any change to the cluster. So the
+# final step here just commits the new image tag back to git — Argo CD does the deploy.
+# Nothing in this pipeline talks to the cluster directly.
+#
+# REQUIRED repo secrets (Settings → Secrets and variables → Actions):
+#   DOCKERHUB_USERNAME   your Docker Hub username (e.g. sayajirao)
+#   DOCKERHUB_TOKEN      a Docker Hub access token (NOT your password)
+###############################################################################
+name: CI
+
+on:
+  push:
+    branches: [main]
+    # Don't re-trigger on the tag-bump commit this workflow makes (it touches
+    # kubernetes/**), and skip runs for pure infra/docs changes.
+    paths-ignore:
+      - 'kubernetes/**'
+      - 'terraform/**'
+      - 'argocd/**'
+      - '**.md'
+  workflow_dispatch: {}   # allow manual runs from the Actions tab
+
+env:
+  APP_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/easyshop-app
+  MIGRATION_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/easyshop-migration
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # needed for the tag-bump commit back to the repo
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Immutable, traceable tag: the short commit SHA. Beats a mutable "latest".
+      - name: Compute image tag
+        id: tag
+        run: echo "value=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # --- Build + push the main app image ------------------------------------
+      - name: Build & push app image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ env.APP_IMAGE }}:${{ steps.tag.outputs.value }}
+            ${{ env.APP_IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # --- Build + push the DB migration image --------------------------------
+      - name: Build & push migration image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./scripts/Dockerfile.migration
+          push: true
+          tags: |
+            ${{ env.MIGRATION_IMAGE }}:${{ steps.tag.outputs.value }}
+            ${{ env.MIGRATION_IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # --- Security scan (fails the build on HIGH/CRITICAL, like the old Trivy stage) ---
+      - name: Trivy scan of app image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.APP_IMAGE }}:${{ steps.tag.outputs.value }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: HIGH,CRITICAL
+
+      # --- Bump the tag in the manifests so Argo CD picks it up ---------------
+      # Argo CD watches kubernetes/ and auto-syncs; this commit is the CI→CD handoff.
+      - name: Update image tags in manifests
+        run: |
+          sed -i "s|image: ${APP_IMAGE}:.*|image: ${APP_IMAGE}:${{ steps.tag.outputs.value }}|" kubernetes/08-easyshop-deployment.yaml
+          sed -i "s|image: ${MIGRATION_IMAGE}:.*|image: ${MIGRATION_IMAGE}:${{ steps.tag.outputs.value }}|" kubernetes/12-migration-job.yaml
+
+      - name: Commit the tag bump
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "No manifest changes to commit."
+          else
+            git add kubernetes/08-easyshop-deployment.yaml kubernetes/12-migration-job.yaml
+            git commit -m "ci: deploy easyshop image ${{ steps.tag.outputs.value }} [skip ci]"
+            git push
+          fi

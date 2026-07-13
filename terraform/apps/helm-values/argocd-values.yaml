@@ -42,7 +42,10 @@ crds:
 global:
   # -- Default domain used by all components
   ## Used for ingresses, certificates, SSO, notifications, etc.
-  domain: argocd.example.com
+  ## Empty: no host-header condition on the ALB ingress rule, so /argocd matches on
+  ## the shared ALB's generated DNS name (we don't own a domain). With a domain set,
+  ## the chart would require that Host header and /argocd would fall through to the app.
+  domain: ""
 
   # -- Runtime class name for all components
   runtimeClassName: ""
@@ -408,9 +411,10 @@ configs:
     ## NOTE: This value should be set when you generate params by other means as it changes ports used by ingress template.
     server.insecure: true
     # -- Value for base href in index.html. Used if Argo CD is running behind reverse proxy under subpath different from /
-    server.basehref: /
+    # Served under /argocd on the shared easyshop ALB (path is not stripped).
+    server.basehref: /argocd
     # -- Used if Argo CD is running behind reverse proxy under subpath different from /
-    server.rootpath: ''
+    server.rootpath: /argocd
     # -- Directory path that contains additional static assets
     server.staticassets: /shared/app
     # -- Disable Argo CD RBAC for user authentication
@@ -2353,34 +2357,42 @@ server:
   # Argo CD server ingress configuration
   ingress:
     # -- Enable an ingress resource for the Argo CD server
+    # DISABLED (personal account): the annotations below reference a foreign-account
+    # ACM cert + a devopsdock.site host we don't own, and a shared ALB group that
+    # poisons on a bad member. Reach ArgoCD via port-forward instead:
+    #   kubectl -n argocd port-forward svc/my-argo-cd-argocd-server 8080:443
+    # To expose it publicly later: own a domain, request an ACM cert in ap-south-1,
+    # replace the certificate-arn + hostname below, then set enabled: true.
     enabled: true
     # -- Specific implementation for ingress controller. One of `generic`, `aws` or `gke`
     ## Additional configuration might be required in related configuration sections
     controller: aws
     # -- Additional ingress labels
     labels: {}
-    # -- Additional ingress annotations
+    # -- Additional ingress annotations — shared ALB group "easyshop", HTTP only.
     ## Ref: https://argo-cd.readthedocs.io/en/stable/operator-manual/ingress/#option-1-ssl-passthrough
     annotations:
-      # nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-      # nginx.ingress.kubernetes.io/ssl-passthrough: "true"
       alb.ingress.kubernetes.io/scheme: internet-facing
-      alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:876997124628:certificate/b69bb6e7-cbd1-490b-b765-27574080f48c
-      alb.ingress.kubernetes.io/group.name: easyshop-app-lb
+      alb.ingress.kubernetes.io/group.name: easyshop
+      # Low order = sorts BEFORE the app's /* catch-all (order 100) on the shared ALB.
+      alb.ingress.kubernetes.io/group.order: '13'
       alb.ingress.kubernetes.io/target-type: ip
       alb.ingress.kubernetes.io/backend-protocol: HTTP
-      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}, {"HTTPS":443}]'
-      alb.ingress.kubernetes.io/ssl-redirect: '443'
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+      # ArgoCD serves its UI from /argocd; health-check that path (root returns 404).
+      # /argocd 301-redirects to /argocd/, so accept 200 and 301 as healthy.
+      alb.ingress.kubernetes.io/healthcheck-path: /argocd
+      alb.ingress.kubernetes.io/success-codes: 200,301
 
     # -- Defines which ingress controller will implement the resource
     ingressClassName: alb
 
     # -- Argo CD server hostname
-    # @default -- `""` (defaults to global.domain)
-    hostname: argocd.devopsdock.site
+    # @default -- `""` — no host match; served on the ALB DNS name under /argocd
+    hostname: ""
 
     # -- The path to Argo CD server
-    path: /
+    path: /argocd
 
     # -- Ingress path type. One of `Exact`, `Prefix` or `ImplementationSpecific`
     pathType: Prefix
@@ -2434,9 +2446,11 @@ server:
     ## Ref: https://argo-cd.readthedocs.io/en/stable/operator-manual/ingress/#aws-application-load-balancers-albs-and-classic-elb-http-mode
     aws:
       # -- Backend protocol version for the AWS ALB gRPC service
-      ## This tells AWS to send traffic from the ALB using gRPC.
-      ## For more information: https://docs.aws.amazon.com/elasticloadbalancing/latest/application/target-group-health-checks.html#health-check-settings
-      backendProtocolVersion: GRPC
+      ## HTTP1 (not GRPC): on a shared HTTP-only ALB, a GRPC target group cannot
+      ## attach to the HTTP listener and POISONS the whole easyshop group (every
+      ## ingress fails to reconcile). HTTP1 makes the chart emit a single plain-HTTP
+      ## backend. The UI works fine over HTTP1; only the CLI's gRPC needs GRPC+TLS.
+      backendProtocolVersion: HTTP1
       # -- Service type for the AWS ALB gRPC service
       ## Can be of type NodePort or ClusterIP depending on which mode you are running.
       ## Instance mode needs type NodePort, IP mode needs type ClusterIP
