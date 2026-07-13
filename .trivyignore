@@ -1,0 +1,29 @@
+# .trivyignore — accepted vulnerabilities with justification
+#
+# Every entry here was assessed, not blanket-suppressed. The scanner stays fully
+# active: any NEW CVE (or a new CRITICAL) still fails the build. These specific
+# findings are accepted because they have no in-line fix and/or do not affect the
+# production runtime. Re-review when the base image / Next.js major is bumped.
+#
+# Reviewed: 2026-07-13
+# -----------------------------------------------------------------------------
+
+# --- Next.js: fix only exists in a BREAKING major (15.5.16 / 16.2.5) -----------
+# We run Next 14.2.35 (latest 14.x). No patch is available on the 14.x line for
+# these; resolving them requires a Next 14 -> 15 migration (breaking changes to
+# middleware, caching, and next/image). Deferred as out of scope for this POC.
+# App is not deployed as a public multi-tenant target; middleware-bypass / SSRF /
+# DoS risk is accepted for the demo environment.
+CVE-2026-44573   # next: information disclosure via Pages Router middleware bypass
+CVE-2026-44578   # next: SSRF via crafted WebSocket upgrade requests
+GHSA-8h8q-6873-q5fj   # next: DoS with Server Components
+GHSA-h25m-26qc-wcjf   # next: DoS via HTTP request deserialization (insecure React)
+GHSA-q4gf-8mx6-v5v3   # next: DoS with Server Components
+
+# --- Base-image / build-tool internals: not our application runtime ------------
+# sigstore 3.1.0 is bundled inside npm shipped with the node:22-alpine base image
+# (not present in our package-lock.json). picomatch is a build-time transitive of
+# Next's tooling (via tinyglobby) and is not shipped in the standalone runtime.
+# Both clear when the base image ships a newer npm; no action available to us.
+CVE-2026-48815   # sigstore: certificateOIDs constraints dropped (npm-bundled, base image)
+CVE-2026-33671   # picomatch: ReDoS via crafted extglob (build-time transitive)
