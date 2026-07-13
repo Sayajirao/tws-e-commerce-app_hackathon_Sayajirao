@@ -37,17 +37,6 @@ output "update_kubeconfig_command" {
   value       = "aws eks --region ${local.region} update-kubeconfig --name ${module.eks.cluster_name}"
 }
 
-output "jenkins_url" {
-  description = "Jenkins URL (Elastic IP, port 8080)"
-  value       = "http://${aws_eip.jenkins_server_ip.public_ip}:8080"
-}
-
-output "bastion_public_ip" {
-  description = "Public IP of the Bastion host (SSH with terra-key.pem)"
-  value       = aws_instance.bastion_host.public_ip
-}
-
-output "ssh_private_key_file" {
-  description = "Path to the auto-generated SSH private key"
-  value       = local_file.deployer_private_key.filename
-}
+# NOTE: Jenkins + Bastion EC2 outputs were removed. CI now runs on GitHub Actions
+# (off-cluster) and CD is handled by Argo CD in-cluster, so there are no EC2 hosts.
+# kubectl reaches the cluster via the public EKS endpoint locked to your IP.

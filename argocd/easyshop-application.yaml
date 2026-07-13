@@ -1,0 +1,59 @@
+###############################################################################
+# Argo CD Application — GitOps CD for EasyShop.
+#
+# Argo CD (already running in-cluster, namespace argocd) watches the kubernetes/
+# folder of this repo and keeps the cluster in sync with git. CI (GitHub Actions)
+# only builds images + bumps the tag in kubernetes/08-easyshop-deployment.yaml;
+# Argo CD then syncs that change to the cluster. No kubectl in CI.
+#
+# Apply ONCE, by hand, to register the app with Argo CD:
+#     kubectl apply -f argocd/easyshop-application.yaml
+# After that it is self-managing.
+#
+# ⚠️ Two files in kubernetes/ are deliberately EXCLUDED from sync (directory.exclude):
+#   - 05-secrets.yaml    : git holds PLACEHOLDER values only; the real
+#                          easyshop-secrets lives in the cluster. Syncing it would
+#                          overwrite live secrets with placeholders → app breaks.
+#   - 12-migration-job.yaml : a one-shot Job. Job pod templates are immutable, so a
+#                          re-sync errors out. Run the migration manually when needed:
+#                          kubectl apply -f kubernetes/12-migration-job.yaml
+###############################################################################
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: easyshop
+  namespace: argocd
+  # Keep the app from being pruned if the Application object itself is deleted.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/Sayajirao/tws-e-commerce-app_hackathon_Sayajirao.git
+    # Deploy branch: CI (GitHub Actions) commits the image-tag bump here, and Argo CD
+    # syncs it to the cluster. dev is the active working/deploy branch.
+    targetRevision: dev
+    path: kubernetes
+    directory:
+      recurse: false
+      # Everything in kubernetes/ EXCEPT these two (see header note).
+      exclude: '{05-secrets.yaml,12-migration-job.yaml}'
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: easyshop
+
+  syncPolicy:
+    automated:
+      prune: true       # delete resources removed from git
+      selfHeal: true    # revert manual drift back to git state
+    syncOptions:
+      - CreateNamespace=false   # the easyshop ns is created by 01-namespace.yaml
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 2m
