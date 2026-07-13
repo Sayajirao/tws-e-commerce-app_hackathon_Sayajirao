@@ -1,753 +1,555 @@
-# 🛍️ EasyShop - Modern E-commerce Platform
+# 🛍️ EasyShop — Modern E-commerce Platform on AWS EKS
 
-[![Next.js](https://img.shields.io/badge/Next.js-14.1.0-black?style=flat-square&logo=next.js)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-14.2.35-black?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0.0-blue?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
-[![MongoDB](https://img.shields.io/badge/MongoDB-8.1.1-green?style=flat-square&logo=mongodb)](https://www.mongodb.com/)
-[![Redux](https://img.shields.io/badge/Redux-2.2.1-purple?style=flat-square&logo=redux)](https://redux.js.org/)
+[![MongoDB](https://img.shields.io/badge/MongoDB-8.x-green?style=flat-square&logo=mongodb)](https://www.mongodb.com/)
+[![Terraform](https://img.shields.io/badge/Terraform-1.3%2B-purple?style=flat-square&logo=terraform)](https://www.terraform.io/)
+[![EKS](https://img.shields.io/badge/AWS-EKS-orange?style=flat-square&logo=amazon-aws)](https://aws.amazon.com/eks/)
+[![ArgoCD](https://img.shields.io/badge/GitOps-ArgoCD-ef7b4d?style=flat-square&logo=argo)](https://argo-cd.readthedocs.io/)
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-EasyShop is a modern, full-stack e-commerce platform built with Next.js 14, TypeScript, and MongoDB. It features a beautiful UI with Tailwind CSS, secure authentication, real-time cart updates, and a seamless shopping experience.
+EasyShop is a full-stack e-commerce platform (Next.js 14 + TypeScript + MongoDB) deployed on
+**AWS EKS** with a complete cloud-native stack: **Terraform** for infrastructure, **ArgoCD** for
+GitOps continuous delivery, **GitHub Actions** for CI, **Prometheus/Grafana** for monitoring, and
+**Elasticsearch/Kibana/Filebeat** for logging.
 
-## ✨ Features
+> **📖 This single README is the complete guide** — from cloning the repo to a fully running,
+> tested deployment, and tearing it back down. If you've **never used** Terraform, Kubernetes,
+> Docker, or ArgoCD before, you can still follow it end-to-end. Every step is copy-paste, in order.
 
-- 🎨 Modern and responsive UI with dark mode support
+---
+
+## 📑 Table of Contents
+
+**Part A — About the app**
+1. [Features](#1-features)
+2. [Application architecture](#2-application-architecture)
+
+**Part B — Deploy it yourself (the guide)**
+3. [How the whole system fits together](#3-how-the-whole-system-fits-together)
+4. [Install the tools (one-time)](#4-install-the-tools-one-time)
+5. [Set up your AWS account](#5-set-up-your-aws-account)
+6. [⚙️ Configuration you MUST edit](#6-configuration-you-must-edit)
+7. [Step 1 — Create the network + cluster](#7-step-1--create-the-network--cluster)
+8. [Step 2 — Connect kubectl](#8-step-2--connect-kubectl)
+9. [Step 3 — Install the add-ons](#9-step-3--install-the-add-ons)
+10. [Step 4 — Deploy the EasyShop app](#10-step-4--deploy-the-easyshop-app)
+11. [Step 5 — Set up CI/CD](#11-step-5--set-up-cicd)
+
+**Part C — Verify, operate, tear down**
+12. [✅ Post-deployment testing (verify EVERYTHING)](#12-post-deployment-testing)
+13. [📧 Optional: email alerts via Alertmanager](#13-optional-email-alerts)
+14. [🔥 Teardown (stop all costs)](#14-teardown-stop-all-costs)
+15. [🆘 Troubleshooting](#15-troubleshooting)
+16. [📚 Glossary (for beginners)](#16-glossary)
+17. [Screenshots](#17-screenshots)
+
+---
+---
+
+# PART A — About the app
+
+## 1. Features
+
+- 🎨 Modern, responsive UI with dark-mode support
 - 🔐 Secure JWT-based authentication
 - 🛒 Real-time cart management with Redux
-- 📱 Mobile-first design approach
-- 🔍 Advanced product search and filtering
-- 💳 Secure checkout process
-- 📦 Multiple product categories
-- 👤 User profiles and order history
-- 🌙 Dark/Light theme support
+- 📱 Mobile-first design
+- 🔍 Advanced product search & filtering
+- 💳 Secure checkout flow
+- 📦 Multiple product categories (seeded with **516 products**)
+- 👤 User profiles & order history
 
-## 🏗️ Architecture
+## 2. Application architecture
 
-EasyShop follows a three-tier architecture pattern:
+Three-tier application:
 
-### 1. Presentation Tier (Frontend)
-- Next.js React Components
-- Redux for State Management
-- Tailwind CSS for Styling
-- Client-side Routing
-- Responsive UI Components
+| Tier | Technology |
+|------|-----------|
+| **Presentation (Frontend)** | Next.js React components, Redux state, Tailwind CSS |
+| **Application (Backend)** | Next.js API routes, auth/authorization, validation, business logic |
+| **Data** | MongoDB + Mongoose ODM |
 
-### 2. Application Tier (Backend)
-- Next.js API Routes
-- Business Logic
-- Authentication & Authorization
-- Request Validation
-- Error Handling
-- Data Processing
+The app is containerized (see `Dockerfile`, multi-stage, `node:22-alpine`) and runs as a Next.js
+**standalone** build. A one-shot Kubernetes Job seeds MongoDB with product data on first deploy.
 
-### 3. Data Tier (Database)
-- MongoDB Database
-- Mongoose ODM
-- Data Models
-- CRUD Operations
-- Data Validation
+---
+---
 
-## PreRequisites
+# PART B — Deploy it yourself
 
-> [!IMPORTANT]  
-> Before you begin setting up this project, make sure the following tools are installed and configured properly on your system:
+## 3. How the whole system fits together
 
-## Setup & Initialization <br/>
-
-### 1. Install Terraform
-* Install Terraform<br/>
-#### Linux & macOS
-```bash
-curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
-sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
-sudo apt-get update && sudo apt-get install terraform
 ```
-### Verify Installation
-```bash
-terraform -v
+   YOU (git push)                         AWS Cloud (ap-south-1)
+        │                        ┌──────────────────────────────────────────┐
+        ▼                        │  VPC (private network)                     │
+  ┌───────────┐   builds image   │   ┌────────────────────────────────────┐  │
+  │  GitHub   │──────────────►   │   │  EKS Kubernetes Cluster            │  │
+  │  Actions  │   pushes to      │   │                                    │  │
+  │  (CI)     │   Docker Hub     │   │  ┌──────────┐   ┌───────────────┐  │  │
+  └─────┬─────┘                  │   │  │ EasyShop │   │ ArgoCD (CD)   │  │  │
+        │ commits new image tag  │   │  │  + Mongo │◄──│ watches git,  │  │  │
+        │ to kubernetes/ folder  │   │  └────┬─────┘   │ auto-deploys  │  │  │
+        ▼                        │   │       │         └───────────────┘  │  │
+  ┌───────────┐                  │   │  ┌────┴──────────────────────────┐ │  │
+  │  Git repo │◄─────────────────┼───│  │ Prometheus/Grafana, ELK logs  │ │  │
+  │ (this one)│   ArgoCD pulls   │   │  └───────────────────────────────┘ │  │
+  └───────────┘                  │   │            ▲                        │  │
+                                 │   └────────────┼────────────────────────┘  │
+                                 │      ALB (load balancer, public URL)       │
+                                 └──────────────────────────────────────────┘
+                                                  ▲
+                                          Your browser (app + dashboards)
 ```
-### Initialize Terraform
+
+**Two separate automation systems — don't confuse them:**
+
+| System | Tool | What it does | How you run it |
+|--------|------|--------------|----------------|
+| **Infrastructure** | Terraform | Creates VPC, EKS, add-ons | **Manually** (Steps 1 & 3 below) |
+| **App delivery (CD)** | GitHub Actions + ArgoCD | Builds app image, auto-deploys on git push | **Automatic** once set up |
+
+> The **app** deploys itself via GitOps after setup. The **infrastructure** is applied by hand
+> (Steps 1–3). Region used throughout: **`ap-south-1`** — change consistently if you use another.
+>
+> ⏱️ **Total time:** ~45–60 min (EKS alone takes ~15–20 min). 💰 **Cost:** ~**$0.50–1.00/hour** —
+> **[tear it down](#14-teardown-stop-all-costs) when done.**
+
+---
+
+## 4. Install the tools (one-time)
+
+Install these, then verify each with its version command:
+
+| Tool | For | Install | Verify |
+|------|-----|---------|--------|
+| **AWS CLI v2** | Talk to AWS | [docs](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | `aws --version` |
+| **Terraform** ≥1.3 | Create infrastructure | [docs](https://developer.hashicorp.com/terraform/install) | `terraform version` |
+| **kubectl** | Control Kubernetes | [docs](https://kubernetes.io/docs/tasks/tools/) | `kubectl version --client` |
+| **Git** | Clone this repo | [docs](https://git-scm.com/downloads) | `git --version` |
+| **Docker** *(optional)* | Only for local image builds | [docs](https://docs.docker.com/get-docker/) | `docker --version` |
+
+> 💡 **Windows:** run everything in **Git Bash** (ships with Git), not PowerShell/CMD — the
+> commands use Unix syntax (`$(...)`, `export`, `openssl`, etc.).
+
+**Clone the repo:**
 ```bash
-terraform init
+git clone https://github.com/Sayajirao/tws-e-commerce-app_hackathon_Sayajirao.git
+cd tws-e-commerce-app_hackathon_Sayajirao
 ```
-### 2. Install AWS CLI
-AWS CLI (Command Line Interface) allows you to interact with AWS services directly from the command line.
+
+---
+
+## 5. Set up your AWS account
+
+You need an AWS account with an **IAM user or SSO role that has broad/admin permissions** (it
+creates VPC, EKS, IAM roles, EC2, load balancers).
 
 ```bash
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-sudo apt install unzip
-unzip awscliv2.zip
-sudo ./aws/install
+# Configure credentials (region = ap-south-1):
+aws configure                 # or: aws configure sso
+
+# Confirm you're on the RIGHT account (note the account number printed):
+aws sts get-caller-identity
 ```
-###  Install AWS CLI in Windows 'powershell'
-```msiexec.exe /i https://awscli.amazonaws.com/AWSCLIV2.msi```
+> 💡 Multiple accounts? Use a named profile and prefix commands with `export AWS_PROFILE=yourprofile`.
 
-
- ```aws configure```
-
-
-> #### This will prompt you to enter:<br/>
-- **AWS Access Key ID:**<br/>
-- **AWS Secret Access Key:**<br/>
-- **Default region name:**<br/>
-- **Default output format:**<br/>
-
-> [!NOTE] 
-> Make sure the IAM user you're using has the necessary permissions. You’ll need an AWS IAM Role with programmatic access enabled, along with the Access Key and Secret Key.
-
-## Getting Started
-
-> Follow the steps below to get your infrastructure up and running using Terraform:<br/>
-
-1. **Clone the Repository:**
-First, clone this repo to your local machine:<br/>
+**Create the S3 bucket that stores Terraform state** (its record of what it built). Names are
+globally unique — pick your own suffix:
 ```bash
-git clone https://github.com/LondheShubham153/tws-e-commerce-app.git
+aws s3 mb s3://easyshop-tfstate-<your-unique-suffix> --region ap-south-1
+```
+
+---
+
+## 6. ⚙️ Configuration you MUST edit
+
+**This is the most important section — skipping it causes ~90% of failures.** Edit each value
+to match your account/environment.
+
+### 6.1 — Terraform state bucket → `terraform/terraform.tf`
+```hcl
+backend "s3" {
+  bucket       = "easyshop-tfstate-sayajirao"   # ← YOUR bucket from Step 5
+  key          = "eks/terraform.tfstate"
+  region       = "ap-south-1"                    # ← your region
+  use_lockfile = true
+}
+```
+
+### 6.2 — Who can reach the cluster API → `terraform/variables.tf`
+Find your public IP, then set `cluster_public_access_cidrs`:
+```bash
+curl -s checkip.amazonaws.com
+```
+```hcl
+variable "cluster_public_access_cidrs" {
+  default = ["<YOUR_IP>/32"]     # e.g. ["203.0.113.45/32"]
+}
+```
+> ⚠️ Home IPs change. If `kubectl` later hangs/times out, re-run `checkip` and update this,
+> then `terraform apply` again. (`["0.0.0.0/0"]` allows any IP — convenient, less secure;
+> IAM still gates real access.)
+
+### 6.3 — ALB Controller region + VPC ID → `terraform/apps/helm-values/alb_controller-1.13.3.yaml`
+```yaml
+region: "ap-south-1"                 # ← your region
+vpcId: "vpc-0512319ee6625c8e4"       # ← CHANGE to your real VPC (Step 1 output `vpc_id`)
+clusterName: "tws-eks-cluster"       # leave unless you rename the cluster
+```
+> You get the real `vpcId` **after** Step 1. Come back and set it before Step 3. Wrong value → ALB controller CrashLoops.
+
+### 6.4 — App domain (optional) → `kubernetes/04-configmap.yaml`
+Replace `easyshop.devopsdock.site` with your domain if you own one. **No domain? Leave it** — the
+app works over the ALB's auto-generated URL (HTTP only).
+
+### 6.5 — ArgoCD repo + branch → `argocd/easyshop-application.yaml`
+```yaml
+repoURL: https://github.com/Sayajirao/tws-e-commerce-app_hackathon_Sayajirao.git  # ← YOUR fork
+targetRevision: dev      # branch ArgoCD watches & deploys from
+```
+> Forked the repo? Point `repoURL` at **your** fork so ArgoCD deploys your commits.
+
+---
+
+## 7. Step 1 — Create the network + cluster
+
+Builds the VPC + EKS cluster. **~15–20 minutes.**
+```bash
 cd terraform
+terraform init      # downloads providers, connects to your S3 state bucket
+terraform plan      # PREVIEW: VPC, EKS, 2× t3.xlarge nodes
+terraform apply     # type 'yes' — go get a coffee ☕
 ```
-2. **Generate SSH Key Pair:**
-Create a new SSH key to access your EC2 instance:
+When done, copy the outputs (you need `vpc_id`):
 ```bash
-ssh-keygen -f terra-key
+terraform output
 ```
-This will prompt you to create a new key file named terra-key.
+> 📌 **Now go back to [6.3](#63--alb-controller-region--vpc-id--terraformappshelm-valuesalb_controller-1133yaml)**
+> and paste the real `vpc_id` into the ALB controller values file.
 
-3. **Private key permission:** Change your private key permission:
+---
+
+## 8. Step 2 — Connect kubectl
+
 ```bash
-chmod 400 terra-key
+aws eks --region ap-south-1 update-kubeconfig --name tws-eks-cluster
+kubectl get nodes         # expect 2 nodes, both "Ready" (may take a minute)
+```
+> ❌ Hangs / "Unauthorized" / "timeout"? Your IP isn't whitelisted → re-check [6.2](#62--who-can-reach-the-cluster-api--terraformvariablestf).
+
+---
+
+## 9. Step 3 — Install the add-ons
+
+Installs AWS Load Balancer Controller, EBS CSI driver, ArgoCD, Prometheus/Grafana, and ELK
+(all Helm charts, applied by Terraform).
+
+**9.1 — Give Terraform the cluster's OIDC ID** (for IAM/IRSA):
+```bash
+aws eks describe-cluster --name tws-eks-cluster --region ap-south-1 \
+  --query "cluster.identity.oidc.issuer" --output text
+# → https://oidc.eks.ap-south-1.amazonaws.com/id/ABCD1234....
+```
+Edit `terraform/apps/variables.tf` → `idp_provider_url`, paste that value **without** `https://`:
+```hcl
+default = "oidc.eks.ap-south-1.amazonaws.com/id/ABCD1234...."
 ```
 
-4. **Initialize Terraform:**
-Initialize the Terraform working directory to download required providers:
+**9.2 — Apply the add-ons:**
 ```bash
+cd apps               # now in terraform/apps
 terraform init
-```
-5. **Review the Execution Plan:**
-Before applying changes, always check the execution plan:
-```bash
-terraform plan
-```
-6. **Apply the Configuration:**
-Now, apply the changes and create the infrastructure:
-```bash
-terraform apply
-```
-> Confirm with `yes` when prompted.
-
-7. **Access Your EC2 Instance;** <br/>
-After deployment, grab the public IP of your EC2 instance from the output or AWS Console, then connect using SSH:
-```bash
-ssh -i terra-key ubuntu@<public-ip>
-```
-8. **Update your kubeconfig:**
-wherever you want to access your eks wheather it is yur local machine or bastion server this command will help you to interact with your eks.
-> [!CAUTION]
-> you need to configure aws cli first to execute this command:
-
-```bash
-aws configure
+terraform apply       # type 'yes' — ~5-10 min
 ```
 
+**9.3 — Verify:**
 ```bash
-aws eks --region eu-west-1 update-kubeconfig --name tws-eks-cluster
+kubectl get pods -A   # kube-system, argocd, monitoring, logging all Running/Completed
+kubectl get sc        # a StorageClass marked (default)
 ```
-9. **Check your cluster:**
+> 🐛 Kibana stuck? Known chart quirk — see [Troubleshooting → Kibana](#kibana-stuck-or-503). Others can proceed meanwhile.
+
+---
+
+## 10. Step 4 — Deploy the EasyShop app
+
+**10.1 — Create app secrets (NOT in git):**
+```bash
+kubectl create namespace easyshop 2>/dev/null   # ok if it exists
+
+kubectl -n easyshop create secret generic easyshop-secrets \
+  --from-literal=JWT_SECRET=$(openssl rand -hex 32) \
+  --from-literal=NEXTAUTH_SECRET=$(openssl rand -hex 32) \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+**10.2 — Deploy app + database:**
+```bash
+cd ../..                    # repo root
+kubectl apply -f kubernetes/
+kubectl -n easyshop get pods -w    # Ctrl+C to stop watching
+```
+Wait for: `mongodb-0` Running, `easyshop-*` Running (2), `db-migration` **Completed**.
+
+**10.3 — Confirm the DB seeded (516 products):**
+```bash
+kubectl -n easyshop logs job/db-migration | tail   # look for "Migrated 516 products"
+```
+> 🐛 Migration failed with `ECONNREFUSED` (ran before Mongo was ready)? Re-run it:
+> ```bash
+> kubectl -n easyshop delete job db-migration
+> kubectl apply -f kubernetes/12-migration-job.yaml
+> ```
+
+---
+
+## 11. Step 5 — Set up CI/CD
+
+**11.1 — Add Docker Hub credentials to GitHub** (repo → **Settings → Secrets and variables →
+Actions → New repository secret**):
+
+| Secret | Value |
+|--------|-------|
+| `DOCKERHUB_USERNAME` | your Docker Hub username (lowercase) |
+| `DOCKERHUB_TOKEN` | a Docker Hub **access token** (`dckr_pat_...`), **Read & Write** |
+
+> Get the token: Docker Hub → **Account Settings → Personal access tokens → Generate**.
+> ✅ **Verify it before relying on it:** `docker login -u YOUR_USERNAME` (paste token at prompt) → must say `Login Succeeded`.
+
+**11.2 — Register the app with ArgoCD (one-time):**
+```bash
+kubectl apply -f argocd/easyshop-application.yaml
+kubectl -n argocd get application easyshop     # expect Synced / Healthy
+```
+
+**11.3 — How the pipeline works:**
+```
+edit code in src/  →  push / merge to `dev`
+   → GitHub Actions: build image, scan with Trivy (security), push to Docker Hub
+   → GitHub Actions: rewrite image tag in kubernetes/08-easyshop-deployment.yaml, commit it
+   → ArgoCD (watching `dev`): sees the commit, syncs, rolls the pods  →  change is live
+```
+- CI config: `.github/workflows/ci.yaml`
+- **Pull Request** → build + scan only (no deploy). **Merge to `dev`/`main`** → full build + push + deploy.
+- Accepted security findings documented in `.trivyignore`.
+
+---
+---
+
+# PART C — Verify, operate, tear down
+
+## 12. Post-deployment testing
+
+**This proves the whole system works. Run top to bottom.**
+
+### ✅ 12.1 — Cluster & pods healthy
 ```bash
 kubectl get nodes
+kubectl get pods -A | grep -v Running | grep -v Completed   # should be ~empty
 ```
 
-## Jenkins Setup Steps
-> [!TIP]
-> Check if jenkins service is running:
+### ✅ 12.2 — Get the public URL
+```bash
+kubectl -n easyshop get ingress    # wait for the ADDRESS column (1-3 min)
+ALB=$(kubectl -n easyshop get ingress easyshop-ingress \
+      -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+echo "App URL: http://$ALB/"
+```
+
+### ✅ 12.3 — App responds over the internet
+```bash
+curl -sI http://$ALB/                            # expect HTTP/1.1 200 OK
+curl -s  http://$ALB/api/products | head -c 300  # expect product JSON from MongoDB
+```
+Then open **`http://$ALB/`** in a browser — storefront loads with products.
+
+### ✅ 12.4 — Dashboards (shared ALB, by path)
+```bash
+echo "App:        http://$ALB/"
+echo "Grafana:    http://$ALB/grafana      (user: admin)"
+echo "ArgoCD:     http://$ALB/argocd       (user: admin)"
+echo "Kibana:     http://$ALB/kibana"
+echo "Prometheus: http://$ALB/prometheus"
+```
+Passwords:
+```bash
+# ArgoCD admin:
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo
+# Grafana admin (default):
+echo "prom-operator"
+```
+**Check:** Grafana → a Kubernetes dashboard has data · Prometheus → Status → Targets are **UP** ·
+ArgoCD → `easyshop` tile green · Kibana → Discover shows logs flowing.
+
+### ✅ 12.5 — End-to-end CI/CD test (the real proof)
+```bash
+# 1. Edit a visible string, e.g. src/app/(auth)/login/page.tsx (the <p> heading).
+# 2. Commit & push to dev:
+git checkout dev
+git add "src/app/(auth)/login/page.tsx"
+git commit -m "test: verify CI/CD pipeline end-to-end"
+git push
+# 3. Watch GitHub → Actions: build → scan → push → tag-bump.
+# 4. Watch ArgoCD adopt the new commit:
+kubectl -n argocd get application easyshop -o jsonpath='SYNC={.status.sync.status} REV={.status.sync.revision}{"\n"}'
+# 5. Confirm the running image tag = new commit SHA:
+kubectl -n easyshop get deploy easyshop -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+# 6. Hard-refresh http://$ALB/login → your text change is live. 🎉
+```
+
+### ✅ 12.6 — Self-healing test (GitOps guarantee)
+```bash
+kubectl -n easyshop scale deploy easyshop --replicas=5   # manual drift
+kubectl -n easyshop get deploy easyshop -w               # ArgoCD selfHeal reverts it (~1 min)
+```
+
+**All six pass → your deployment is fully working. ✅**
+
+---
+
+## 13. Optional: email alerts
+
+Alertmanager (in `monitoring`) can email you on **critical** alerts via Gmail SMTP. Config lives in
+`terraform/apps/helm-values/kube-prom-stack.yaml`; the password is read from a Kubernetes secret
+(kept out of git).
 
 ```bash
-sudo systemctl status jenkins
+# 1. Create a Gmail App Password (needs 2-Step Verification):
+#    https://myaccount.google.com/apppasswords
+# 2. Create the secret the config expects:
+kubectl -n monitoring create secret generic alertmanager-smtp \
+  --from-literal=password='<YOUR_16_CHAR_APP_PASSWORD>'
+# 3. Re-apply so Alertmanager picks it up:
+cd terraform/apps && terraform apply
 ```
-## Steps to Access Jenkins & Install Plugins
+> The values file already sets `to`/`from`/`smarthost: smtp.gmail.com:587` and mounts the secret
+> via `alertmanagerSpec.secrets`. Edit the email address there to your own.
+> Without this secret, Alertmanager logs SMTP failures (harmless but noisy).
 
-#### 1. **Open Jenkins in Browser:**
-> Use your public IP with port 8080:
->**http://<public_IP>:8080**
+---
 
-#### 2. **Initial Admin password:**
-> Start the service and get the Jenkins initial admin password:
-> ```bash
-> sudo cat /var/lib/jenkins/secrets/initialAdminPassword
-> ```
+## 14. Teardown (stop all costs)
 
-#### 3. **Start Jenkins (*If Not Running*):**
-> Get the Jenkins initial admin password:
-> ```bash
-> sudo systemctl enable jenkins
-> sudo systemctl restart jenkins
-> ```
-#### 4. **Install Essential Plugins:**
-> - Navigate to:
-> **Manage Jenkins → Plugins → Available Plugins**<br/>
-> - Search and install the following:<br/>
->   - **Docker Pipeline**<br/>
->   - **Pipeline View**
-
-
-#### 5. **Set Up Docker & GitHub Credentials in Jenkins (Global Credentials)**<br/>
->
-> - GitHub Credentials:
->   - Go to:
-**Jenkins → Manage Jenkins → Credentials → (Global) → Add Credentials**
-> - Use:
->   - Kind: **Username with password**
->   - ID: **github-credentials**<br/>
-
-
-> - DockerHub Credentials:
-> Go to the same Global Credentials section
-> - Use:
->   - Kind: **Username with password**
->   - ID: **docker-hub-credentials**
-> [Notes:]
-> Use these IDs in your Jenkins pipeline for secure access to GitHub and DockerHub
-
-#### 6. Jenkins Shared Library Setup:
-> - `Configure Trusted Pipeline Library`:
->   - Go to:
-> **Jenkins → Manage Jenkins → Configure System**
-> Scroll to Global Pipeline Libraries section
->
-> - **Add a New Shared Library:** 
-> - **Name:** Shared
-> - **Default Version:** main
-> - **Project Repository URL:** `https://github.com/<your user-name/jenkins-shared-libraries`.
->
-> [Notes:] 
-> Make sure the repo contains a proper directory structure eq: vars/<br/>
-	
-#### 7. Setup Pipeline<br/>
-> - Create New Pipeline Job<br/>
->   - **Name:** EasyShop<br/>
->   - **Type:** Pipeline<br/>
-> Press `Okey`<br/>
-
-> > In **General**<br/>
-> > - **Description:** EasyShop<br/>
-> > - **Check the box:** `GitHub project`<br/>
-> > - **GitHub Repo URL:** `https://github.com/<your user-name/tws-e-commerce-app`<br/>
->
-> > In **Trigger**<br/>
-> > - **Check the box:**`GitHub hook trigger for GITScm polling`<br/>
->
-> > In **Pipeline**<br/>
-> > - **Definition:** `Pipeline script from SCM`<br/>
-> > - **SCM:** `Git`<br/>
-> > - **Repository URL:** `https://github.com/<your user-name/tws-e-commerce-app`<br/>
-> > - **Credentials:** `github-credentials`<br/>
-> > - **Branch:** master<br/>
-> > - **Script Path:** `Jenkinsfile`<br/>
-
-#### **Fork Required Repos**<br/>
-> > Fork App Repo:<br/>
-> > * Open the `Jenkinsfile`<br/>
-> > * Change the DockerHub username to yours<br/>
->
-> > **Fork Shared Library Repo:**<br/>
-> > * Edit `vars/update_k8s_manifest.groovy`<br/>
-> > * Update with your `DockerHub username`<br/>
-> 
-> > **Setup Webhook**<br/>
-> > In GitHub:<br/>
-> >  * Go to **`Settings` → `Webhooks`**<br/>
-> >  * Add a new webhook pointing to your Jenkins URL<br/>
-> >  * Select: **`GitHub hook trigger for GITScm polling`** in Jenkins job<br/>
->
-> > **Trigger the Pipeline**<br/>
-> > Click **`Build Now`** in Jenkins
-
-#### **8. CD – Continuous Deployment Setup**<br/>
-**Prerequisites:**<br/>
-Before configuring CD, make sure the following tools are installed:<br/>
-* Installations Required:<br/>
-**kubectl**<br/>
-**AWS CLI**
-
-**SSH into Bastion Server**<br/>
-* Connect to your Bastion EC2 instance via SSH.
-
-**Note:**<br/>
-This is not the node where Jenkins is running. This is the intermediate EC2 (Bastion Host) used for accessing private resources like your EKS cluster.
-
-**8. Configure AWS CLI on Bastion Server**
-Run the AWS configure command:<br/>
+**⚠️ Do this when done — ~$0.50–1/hr.** Delete in reverse order:
 ```bash
-aws configure
+# 1. App first (releases the ALB so it isn't orphaned):
+kubectl delete -f kubernetes/
+# 2. Add-ons:
+cd terraform/apps && terraform destroy      # type 'yes'
+# 3. Cluster + VPC:
+cd .. && terraform destroy                  # type 'yes'
 ```
-Add your Access Key and Secret Key when prompted.
-
-**9. Update Kubeconfig for EKS**<br/>
-Run the following important command:
+**Verify nothing costly lingers** (orphaned LBs are the usual money leak):
 ```bash
-aws eks update-kubeconfig --region eu-west-1 --name tws-eks-cluster
+aws elbv2 describe-load-balancers --region ap-south-1 --query 'LoadBalancers[].LoadBalancerName'
+aws ec2 describe-instances --region ap-south-1 \
+  --filters "Name=instance-state-name,Values=running" --query 'Reservations[].Instances[].InstanceId'
 ```
-* This command maps your EKS cluster with your Bastion server.
-* It helps to communicate with EKS components.
+Both should be empty. Delete a lingering LB in the Console (EC2 → Load Balancers). Optionally drop
+the state bucket: `aws s3 rb s3://<your-bucket> --force`.
 
-**10. Install AWS application load balancer refering the below docs link**<br/>
-```
-https://docs.aws.amazon.com/eks/latest/userguide/lbc-helm.html
-```
-**11. Install the EBS CSI driver refering the below docs link**<br/>
-```
-https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html#eksctl_store_app_data
-```
+---
 
+## 15. Troubleshooting
 
-**12. Argo CD Setup**<br/>
-Create a Namespace for Argo CD<br/>
+<details><summary><b>kubectl hangs / "Unauthorized" / "timeout"</b></summary>
+
+Your IP isn't allowed to reach the EKS API. Update `terraform/variables.tf →
+cluster_public_access_cidrs` with `curl -s checkip.amazonaws.com`, then `terraform apply` in `terraform/`.
+</details>
+
+<details><summary><b>ALB Controller CrashLooping (kube-system)</b></summary>
+
+Wrong `vpcId`/`region` in `terraform/apps/helm-values/alb_controller-1.13.3.yaml`. Set `vpcId` to
+your real VPC (`terraform output vpc_id`), then `terraform apply` in `terraform/apps`.
+</details>
+
+<details><summary><b>Ingress has no ADDRESS / URL won't resolve</b></summary>
+
+ALB takes 1–3 min. If it never appears, the ALB controller is unhealthy (above). Check:
+`kubectl -n kube-system logs deploy/aws-load-balancer-controller`.
+</details>
+
+<details><summary><b>Dashboard 404 (e.g. /grafana)</b></summary>
+
+On the shared ALB, the app's catch-all `/*` must sort LAST via
+`alb.ingress.kubernetes.io/group.order` (app=`100`, dashboards=`10`–`13`). A 404 whose response
+header shows `X-Powered-By: Next.js` means the path hit the app — fix the order.
+</details>
+
+<details><summary><b id="kibana-stuck-or-503">Kibana stuck / 503</b></summary>
+
+The chart re-runs a token hook that conflicts with the existing secret on re-apply:
 ```bash
-kubectl create namespace argocd
+kubectl -n logging delete secret kibana-kibana-es-token 2>/dev/null
+kubectl -n logging delete job,configmap,sa,role,rolebinding -l app=pre-install-kibana-kibana 2>/dev/null
+cd terraform/apps && terraform apply
+kubectl -n logging rollout restart deployment kibana-kibana
 ```
-1. Install Argo CD using helm  
-(https://artifacthub.io/packages/helm/argo/argo-cd)
+</details>
+
+<details><summary><b>CI fails: "unauthorized: incorrect username or password"</b></summary>
+
+`DOCKERHUB_TOKEN` is wrong/expired, or `DOCKERHUB_USERNAME` is an email not the username.
+Regenerate a Read&Write token on Docker Hub, update the repo secret. Test: `docker login -u YOUR_USERNAME`.
+</details>
+
+<details><summary><b>Trivy fails the CI build on CVEs</b></summary>
+
+Trivy is doing its job. Either patch the flagged dependency/base image, or add a justified entry to
+`.trivyignore`. The image uses `node:22-alpine`; app deps pinned to patched versions.
+</details>
+
+<details><summary><b>ArgoCD "OutOfSync" and won't update</b></summary>
+
+Force a refresh:
 ```bash
-helm repo add argo https://argoproj.github.io/argo-helm
-helm install my-argo-cd argo/argo-cd --version 8.0.10
+kubectl -n argocd annotate application easyshop argocd.argoproj.io/refresh=hard --overwrite
 ```
-2. get the values file and save it
-```bash
-helm show values argo/argo-cd > argocd-values.yaml
-```
-3. edit the values file, change the below settings.
-```
-global:
-  domain: argocd.example.com
-
-configs:
-  params:
-    server.insecure: true
-
-server:
-  ingress:
-    enabled: true
-    controller: aws
-    ingressClassName: alb
-    annotations:
-      alb.ingress.kubernetes.io/scheme: internet-facing
-      alb.ingress.kubernetes.io/certificate-arn: <your-cert-arn>
-      alb.ingress.kubernetes.io/group.name: easyshop-app-lb
-      alb.ingress.kubernetes.io/target-type: ip
-      alb.ingress.kubernetes.io/backend-protocol: HTTP
-      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}, {"HTTPS":443}]'
-      alb.ingress.kubernetes.io/ssl-redirect: '443'
-    hostname: argocd.devopsdock.site
-    aws:
-      serviceType: ClusterIP # <- Used with target-type: ip
-      backendProtocolVersion: GRPC
-```
-4. save and upgrade the helm chart.
-```
-helm upgrade my-argo-cd argo/argo-cd -n argocd -f my-values.yaml
-```
-5. add the record in route53 “argocd.devopsdock.site” with load balancer dns.
-
-6. access it in browser.
-
-7. Retrive the secret for Argocd
-
-```jsx
-kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
-```
-
-8. login to argocd “admin” and retrieved password
-
-9. Change the password by going to “user info” tab in the UI.
-
-**Deploy Your Application in Argo CD GUI**
-
-> On the Argo CD homepage, click on the “New App” button.
-> 
-
-> Fill in the following details:
-> 
-> - **Application Name:** `Enter your desired app name`
-> - **Project Name:** Select `default` from the dropdown.
-> - **Sync Policy:** Choose `Automatic`.
-
-> In the Source section:
-> 
-> - **Repo URL:** Add the Git repository URL that contains your Kubernetes manifests.
-> - **Path:** `Kubernetes` (or the actual path inside the repo where your manifests reside)
-
-> In the “Destination” section:
-> 
-> - **Cluster URL:** [https://kubernetes.default.svc](https://kubernetes.default.svc/) (usually shown as "default")
-> - **Namespace:** tws-e-commerce-app (or your desired namespace)
-
-> Click on “Create”.
-> 
-
-NOTE: before deploying Chnage your ingress settings and image tag in the yamls inside “kubernetes” directory
-
-Ingress Annotations: 
-
-```jsx
-annotations:
-    alb.ingress.kubernetes.io/group.name: easyshop-app-lb
-    alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:876997124628:certificate/b69bb6e7-cbd1-490b-b765-27574080f48c
-    alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/backend-protocol: HTTP
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}, {"HTTPS":443}]'
-    alb.ingress.kubernetes.io/ssl-redirect: '443'
-    kubernetes.io/ingress.class: alb
-```
-
-- **add record to route 53 “easyshop.devopsdock.site”**
-
-- **Access your site now.**
-
-### Install Metric Server
-
-- metric server install thru helm chart
-```
-https://artifacthub.io/packages/helm/metrics-server/metrics-server
-```
-verify metric server.
-```
-kubectl get pods -w
-kubectl top pods
-```
-### Monitoring Using kube-prometheus-stack
-
-create a namespace “monitoring”
-
-```jsx
-kubectl create ns monitoring
-```
-```
-https://artifacthub.io/packages/helm/prometheus-community/kube-prometheus-stack
-```
-verify deployment :
-
-```jsx
-kubectl get pods -n monitoring
-```
-
-get the helm values and save it in a file
-
-```jsx
-helm show values prometheus-community/kube-prometheus-stack > kube-prom-stack.yaml 
-```
-
-edit the file and add the following in the params for prometheus, grafana and alert manger.
-
-**Grafana:**
-
-```jsx
-ingressClassName: alb
-annotations:
-      alb.ingress.kubernetes.io/group.name: easyshop-app-lb
-      alb.ingress.kubernetes.io/scheme: internet-facing
-      alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:876997124628:certificate/b69bb6e7-cbd1-490b-b765-27574080f48c
-      alb.ingress.kubernetes.io/target-type: ip
-			alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}, {"HTTPS":443}]'
-      alb.ingress.kubernetes.io/ssl-redirect: '443'
- 
-    hosts:
-      - grafana.devopsdock.site
-```
-
-**Prometheus:** 
-
-```jsx
-ingressClassName: alb
-annotations:
-      alb.ingress.kubernetes.io/group.name: easyshop-app-lb
-      alb.ingress.kubernetes.io/scheme: internet-facing
-      alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:876997124628:certificate/b69bb6e7-cbd1-490b-b765-27574080f48c
-      alb.ingress.kubernetes.io/target-type: ip
-      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}, {"HTTPS":443}]'
-      alb.ingress.kubernetes.io/ssl-redirect: '443'
-    labels: {}
-
-    
-  
-    hosts: 
-      - prometheus.devopsdock.site
-        paths:
-        - /
-        pathType: Prefix
-```
-**Alertmanger:**
-```jsx
-ingressClassName: alb
-annotations:
-      alb.ingress.kubernetes.io/group.name: easyshop-app-lb
-      alb.ingress.kubernetes.io/scheme: internet-facing
-      alb.ingress.kubernetes.io/target-type: ip
-      alb.ingress.kubernetes.io/backend-protocol: HTTP
-			alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}, {"HTTPS":443}]'
-      alb.ingress.kubernetes.io/ssl-redirect: '443'
-    
-    hosts: 
-      - alertmanager.devopsdock.site
-    paths:
-    - /
-    pathType: Prefix
-```
-
-**Alerting to Slack** 
-
-Create a new workspace in slack, create a new channel e.g. “#alerts”
-
-go to https://api.slack.com/apps to create the webhook.
-
-1. create an app “alertmanager”
-2. go to incoming webhook
-3. create a webhook and copy it.
-
-modify the helm values.
-
-```jsx
-config:
-    global:
-      resolve_timeout: 5m
-    route:
-      group_by: ['namespace']
-      group_wait: 30s
-      group_interval: 5m
-      repeat_interval: 12h
-      receiver: 'slack-notification'
-      routes:
-      - receiver: 'slack-notification'
-        matchers:
-          - severity = "critical"
-    receivers:
-    - name: 'slack-notification'
-      slack_configs:
-          - api_url: 'https://hooks.slack.com/services/T08ULBZB5UY/B08U0CE3DEG/OivCLYq28gNzz4TabiY5zUj'
-            channel: '#alerts'
-            send_resolved: true
-    templates:
-    - '/etc/alertmanager/config/*.tmpl'
-```
-
-Note: you can refer this DOCs for the slack configuration. “https://prometheus.io/docs/alerting/latest/configuration/#slack_config” 
-
-upgrade the chart
-
-```jsx
-helm upgrade my-kube-prometheus-stack prometheus-community/kube-prometheus-stack -f kube-prom-stack.yaml -n monitoring
-```
-
-get grafana secret “user = admin”
-
-```jsx
-kubectl --namespace monitoring get secrets my-kube-prometheus-stack-grafana -o jsonpath="{.data.admin-password}" | base64 -d ; echo
-```
-
-You would get the notification in the slack’s respective channel.
-
-## **Logging**
-- we will use elasticsearch for logsstore, filebeat for log shipping and kibana for the visualization. 
-```
-NOTE: The EBS driver we installed is for elasticsearch to dynamically provision an EBS volume.
-```
-**Install Elastic Search:**
-
-```jsx
-helm repo add elastic https://helm.elastic.co -n logging
-helm install my-elasticsearch elastic/elasticsearch --version 8.5.1 -n logging
-```
-
-Create a storageclass so that elastic search can dynamically provision volume in AWS.
-
-storageclass.yaml
-
-```jsx
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: ebs-aws
-  annotations:
-    storageclass.kubernetes.io/is-default-class: "true"
-provisioner: ebs.csi.aws.com
-reclaimPolicy: Delete
-volumeBindingMode: WaitForFirstConsumer
-```
-
-apply the yaml file.
-
-get the values for elastic search helm chart.
-
-```jsx
-helm show values elastic/elasticsearch > elasticsearch.yaml 
-```
-
-update the values
-
-```jsx
-replicas: 1
-minimumMasterNodes: 1
-clusterHealthCheckParams: "wait_for_status=yellow&timeout=1s"
-```
-
-upgrade the chart
-
-```jsx
-helm upgrade my-elasticsearch elastic/elasticsearch -f elasticsearch.yaml -n logging
-```
-
-if upgarde doesnt happen then uninstall and install it again.
-
-make sure the pod is running .
-
-```jsx
-kubectl get po -n logging
-NAME                     READY   STATUS    RESTARTS   AGE
-elastic-operator-0       1/1     Running   0          6h33m
-elasticsearch-master-0   1/1     Running   0          87m
-```
-
-**FileBeat:**
-
-install filebeat for log shipping.
-
-```jsx
-helm repo add elastic https://helm.elastic.co
-helm install my-filebeat elastic/filebeat --version 8.5.1 -n logging
-```
-
-get the values
-
-```jsx
-helm show values elastic/filebeat > filebeat.yaml 
-```
-
-Filebeat runs as a daemonset. check if its up.
-
-```jsx
-kubectl get po -n logging
-NAME                         READY   STATUS    RESTARTS   AGE
-elastic-operator-0           1/1     Running   0          6h38m
-elasticsearch-master-0       1/1     Running   0          93m
-my-filebeat-filebeat-g79qs   1/1     Running   0          25s
-my-filebeat-filebeat-kh8mj   1/1     Running   0          25s
-```
-
-**Install Kibana:**
-
-install kibana through helm.
-
-```jsx
-helm repo add elastic https://helm.elastic.co
-helm install my-kibana elastic/kibana --version 8.5.1 -n logging
-```
-
-Verify if it runs.
-
-```jsx
-k get po -n logging
-NAME                               READY   STATUS    RESTARTS       AGE
-elastic-operator-0                 1/1     Running   0              8h
-elasticsearch-master-0             1/1     Running   0              3h50m
-my-filebeat-filebeat-g79qs         1/1     Running   0              138m
-my-filebeat-filebeat-jz42x         1/1     Running   0              108m
-my-filebeat-filebeat-kh8mj         1/1     Running   1 (137m ago)   138m
-my-kibana-kibana-559f75574-9s4xk   1/1     Running   0              130m
-```
-
-get values
-
-```jsx
-helm show values elastic/kibana > kibana.yaml 
-```
-
-modify the values for ingress settings
-
-```jsx
-ingress:
-  enabled: true
-  className: "alb"
-  pathtype: Prefix
-  annotations:
-    alb.ingress.kubernetes.io/group.name: easyshop-app-lb
-    alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/backend-protocol: HTTP
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:ap-south-1:876997124628:certificate/b69bb6e7-cbd1-490b-b765-27574080f48c
-    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}, {"HTTPS":443}]'
-    alb.ingress.kubernetes.io/ssl-redirect: '443'
-  # kubernetes.io/ingress.class: nginx
-  # kubernetes.io/tls-acme: "true"
-  hosts:
-    - host: logs-kibana.devopsdock.site
-      paths:
-        - path: /
-```
-
-save the file and exit. upgrade the helm chart using the values file.
-
-```jsx
-helm upgrade my-kibana elastic/kibana -f kibana.yaml -n logging
-```
-
-add all the records to route 53 and give the value as load balancer DNS name. and try to access one by one. 
-
-retrive the secret of elastic search as kibana’s password, username is “elastic”
-
-```jsx
-kubectl get secrets --namespace=logging elasticsearch-master-credentials -ojsonpath='{.data.password}' | base64 -d
-```
-
-### **Filebeat Configuration to ship the "easyshop" app logs to elasticsearch**
-
-configure filebeat to ship the application logs to view in kibana
-
-```jsx
-filebeatConfig:
-    filebeat.yml: |
-      filebeat.inputs:
-      - type: container
-        paths:
-          - /var/log/containers/*easyshop*.log
-```
-
-upgrade filebeat helm chart and check in kibana’s UI if the app logs are streaming.
-
-## **Congratulations!** <br/>
-![EasyShop Website Screenshot](./public/easyshop.JPG)
+Confirm `targetRevision` in `argocd/easyshop-application.yaml` matches the branch you push to.
+</details>
 
 ---
 
-### 📌 Architecture Diagram
-![Diagram](./public/diagram-export.JPG)
+## 16. Glossary
+
+| Term | Plain-English meaning |
+|------|----------------------|
+| **VPC** | Your private network inside AWS. |
+| **EKS** | AWS's managed Kubernetes — runs your containers. |
+| **Kubernetes / kubectl** | The container orchestrator; `kubectl` is the command to control it. |
+| **Terraform** | Creates cloud infrastructure from code (`.tf` files). |
+| **Terraform state** | Terraform's record (stored in S3) of what it built. |
+| **Helm chart** | A packaged Kubernetes app (used for the add-ons). |
+| **Pod** | One or more running containers — smallest unit in Kubernetes. |
+| **Namespace** | A folder that groups Kubernetes resources. |
+| **Ingress / ALB** | Public entry point; ALB = AWS load balancer giving you a URL. |
+| **ArgoCD** | Watches git and auto-deploys changes to the cluster (GitOps). |
+| **CI / CD** | CI = build & test on push; CD = auto-deploy. |
+| **Docker image / tag** | A packaged app; the tag (a git SHA here) identifies the version. |
+| **IRSA / OIDC** | How a pod securely gets AWS permissions without stored keys. |
+| **Trivy** | Scans container images for security vulnerabilities. |
+| **Secret** | Sensitive config (passwords, keys) stored securely in Kubernetes. |
 
 ---
 
-### 📌 ArgoCD
-![ArgoCD](./public/Argocd.JPG)
+## 17. Screenshots
+
+| | |
+|---|---|
+| **Storefront** | ![EasyShop](./public/easyshop.JPG) |
+| **Architecture** | ![Diagram](./public/diagram-export.JPG) |
+| **ArgoCD** | ![ArgoCD](./public/Argocd.JPG) |
+| **App capture** | ![Capture](./public/Capture.JPG) |
+| **AlertManager** | ![AlertManager](./public/alertManager.JPG) |
+| **Grafana** | ![Grafana](./public/grafana.JPG) |
+| **Kibana** | ![Kibana](./public/kibana.JPG) |
+| **Prometheus** | ![Prometheus](./public/prometheus.JPG) |
 
 ---
 
-### 📌 Capture
-![Capture](./public/Capture.JPG)
-
----
-
-### 📌 AlertManager
-![AlertManager](./public/alertManager.JPG)
-
-
----
-
-### 📌 Grafana Dashboard
-![Grafana](./public/grafana.JPG)
-
----
-
-### 📌 Kibana Logs View
-![Kibana](./public/kibana.JPG)
-
----
-
-### 📌 Prometheus Dashboard
-![Prometheus](./public/prometheus.JPG)
-
-### WO! ooo!!! ...Your project is now deployed.
+*Built with Next.js · MongoDB · Docker · Terraform · AWS EKS · ArgoCD · GitHub Actions ·
+Prometheus/Grafana · Elasticsearch/Kibana/Filebeat.*
+*Infrastructure automation (Terraform-in-CI) is a planned enhancement — infra is currently applied manually per Steps 1–3.*
