@@ -1,22 +1,34 @@
 ###############################################################################
-# CI — build, scan, push images, then bump the image tag in the k8s manifests.
+# CI — build, scan, push all service images, then bump their tags in the k8s
+# manifests. CD is handled by Argo CD (argocd/easyshop-application.yaml), which
+# watches kubernetes/ and syncs to the cluster. This pipeline never talks to the
+# cluster directly — the final commit is the CI→CD handoff.
 #
-# This is the CI half only. CD is handled by Argo CD (argocd/easyshop-application.yaml),
-# which watches kubernetes/ in this repo and syncs any change to the cluster. So the
-# final step here just commits the new image tag back to git — Argo CD does the deploy.
-# Nothing in this pipeline talks to the cluster directly.
+# DYNAMIC / MATRIX-DRIVEN:
+#   To add a new microservice, add ONE entry to the `service` matrix below
+#   (name + dockerfile + context + manifest). Everything else — parallel build,
+#   push, Trivy scan, tag bump — happens automatically. No copy-pasted steps.
 #
 # REQUIRED repo secrets (Settings → Secrets and variables → Actions):
-#   DOCKERHUB_USERNAME   your Docker Hub username (e.g. sayajirao)
-#   DOCKERHUB_TOKEN      a Docker Hub access token (NOT your password)
+#   DOCKERHUB_USERNAME   Docker Hub username (e.g. sayajirao)
+#   DOCKERHUB_TOKEN      Docker Hub access token (NOT your password)
 ###############################################################################
 name: CI
 
 on:
   push:
-    branches: [main]
-    # Don't re-trigger on the tag-bump commit this workflow makes (it touches
-    # kubernetes/**), and skip runs for pure infra/docs changes.
+    branches: [main, dev]
+    # Skip the workflow's own tag-bump commit (touches kubernetes/**) and pure
+    # infra/docs changes.
+    paths-ignore:
+      - 'kubernetes/**'
+      - 'terraform/**'
+      - 'argocd/**'
+      - '**.md'
+  # Validate PRs targeting main/dev: build + scan run, but the image push and the
+  # manifest-bump commit are gated to real merges (see `push:` conditions below).
+  pull_request:
+    branches: [main, dev]
     paths-ignore:
       - 'kubernetes/**'
       - 'terraform/**'
@@ -24,20 +36,41 @@ on:
       - '**.md'
   workflow_dispatch: {}   # allow manual runs from the Actions tab
 
-env:
-  APP_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/easyshop-app
-  MIGRATION_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/easyshop-migration
-
 jobs:
-  build-and-push:
+  # ---------------------------------------------------------------------------
+  # Build + scan + push EVERY service in parallel (one matrix leg per service).
+  # ---------------------------------------------------------------------------
+  build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - name: easyshop-app          # main Next.js app
+            dockerfile: ./Dockerfile
+            context: .
+            manifest: kubernetes/08-easyshop-deployment.yaml
+            scan: true                  # gate the build on this image's CVEs
+          - name: easyshop-migration    # one-shot DB seeder
+            dockerfile: ./scripts/Dockerfile.migration
+            context: .
+            manifest: kubernetes/12-migration-job.yaml
+            scan: false
+          # --- To add a microservice, copy the block above: -------------------
+          # - name: easyshop-payments
+          #   dockerfile: ./services/payments/Dockerfile
+          #   context: ./services/payments
+          #   manifest: kubernetes/13-payments-deployment.yaml
+          #   scan: true
     permissions:
-      contents: write        # needed for the tag-bump commit back to the repo
+      contents: read
+    outputs:
+      tag: ${{ steps.tag.outputs.value }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Immutable, traceable tag: the short commit SHA. Beats a mutable "latest".
+      # Immutable, traceable tag: the short commit SHA (same for all services).
       - name: Compute image tag
         id: tag
         run: echo "value=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
@@ -51,48 +84,59 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # --- Build + push the main app image ------------------------------------
-      - name: Build & push app image
+      # On PRs we build (to validate the Dockerfile + feed the Trivy scan) but do
+      # NOT push — publishing unmerged code to Docker Hub is undesirable. On a real
+      # push/merge to main|dev, we push both the SHA tag and :latest.
+      - name: Build${{ github.event_name == 'push' && ' & push' || '' }} ${{ matrix.service.name }}
         uses: docker/build-push-action@v6
         with:
-          context: .
-          file: ./Dockerfile
-          push: true
+          context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.dockerfile }}
+          push: ${{ github.event_name == 'push' }}
+          load: ${{ github.event_name != 'push' }}
           tags: |
-            ${{ env.APP_IMAGE }}:${{ steps.tag.outputs.value }}
-            ${{ env.APP_IMAGE }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service.name }}:${{ steps.tag.outputs.value }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service.name }}:latest
+          cache-from: type=gha,scope=${{ matrix.service.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service.name }}
 
-      # --- Build + push the DB migration image --------------------------------
-      - name: Build & push migration image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./scripts/Dockerfile.migration
-          push: true
-          tags: |
-            ${{ env.MIGRATION_IMAGE }}:${{ steps.tag.outputs.value }}
-            ${{ env.MIGRATION_IMAGE }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # --- Security scan (fails the build on HIGH/CRITICAL, like the old Trivy stage) ---
-      - name: Trivy scan of app image
+      # Fails the build on HIGH/CRITICAL for services flagged scan: true.
+      - name: Trivy scan ${{ matrix.service.name }}
+        if: ${{ matrix.service.scan }}
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: ${{ env.APP_IMAGE }}:${{ steps.tag.outputs.value }}
+          image-ref: ${{ secrets.DOCKERHUB_USERNAME }}/${{ matrix.service.name }}:${{ steps.tag.outputs.value }}
           format: table
           exit-code: '1'
           ignore-unfixed: true
           severity: HIGH,CRITICAL
 
-      # --- Bump the tag in the manifests so Argo CD picks it up ---------------
-      # Argo CD watches kubernetes/ and auto-syncs; this commit is the CI→CD handoff.
-      - name: Update image tags in manifests
+  # ---------------------------------------------------------------------------
+  # After ALL services build, bump every manifest's image tag in one commit.
+  # Argo CD sees the commit and syncs the new tags to the cluster.
+  # ---------------------------------------------------------------------------
+  bump-manifests:
+    needs: build
+    # Never commit a tag bump from an open PR — only on a real merge to main|dev.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write        # commit the tag bump back to the repo
+    env:
+      TAG: ${{ needs.build.outputs.tag }}
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Rewrite `image: <user>/<svc>:<anything>` → the new SHA tag, for every
+      # <user>/* image line across all manifests. Data-driven: no per-service edit.
+      - name: Bump image tags in manifests
         run: |
-          sed -i "s|image: ${APP_IMAGE}:.*|image: ${APP_IMAGE}:${{ steps.tag.outputs.value }}|" kubernetes/08-easyshop-deployment.yaml
-          sed -i "s|image: ${MIGRATION_IMAGE}:.*|image: ${MIGRATION_IMAGE}:${{ steps.tag.outputs.value }}|" kubernetes/12-migration-job.yaml
+          find kubernetes -name '*.yaml' -print0 | xargs -0 sed -i -E \
+            "s|(image:[[:space:]]*${DOCKERHUB_USERNAME}/[^:[:space:]]+):[^[:space:]]+|\1:${TAG}|g"
+          echo "----- changed image lines -----"
+          grep -rn "image: ${DOCKERHUB_USERNAME}/" kubernetes/ || true
 
       - name: Commit the tag bump
         run: |
@@ -101,7 +145,7 @@ jobs:
           if git diff --quiet; then
             echo "No manifest changes to commit."
           else
-            git add kubernetes/08-easyshop-deployment.yaml kubernetes/12-migration-job.yaml
-            git commit -m "ci: deploy easyshop image ${{ steps.tag.outputs.value }} [skip ci]"
+            git add kubernetes/
+            git commit -m "ci: deploy images ${TAG} [skip ci]"
             git push
           fi

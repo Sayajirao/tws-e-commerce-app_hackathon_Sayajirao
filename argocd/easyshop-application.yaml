@@ -31,7 +31,9 @@ spec:
 
   source:
     repoURL: https://github.com/Sayajirao/tws-e-commerce-app_hackathon_Sayajirao.git
-    targetRevision: main
+    # Deploy branch: CI (GitHub Actions) commits the image-tag bump here, and Argo CD
+    # syncs it to the cluster. dev is the active working/deploy branch.
+    targetRevision: dev
     path: kubernetes
     directory:
       recurse: false
