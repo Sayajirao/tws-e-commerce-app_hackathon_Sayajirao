@@ -80,6 +80,14 @@ The app is containerized (see `Dockerfile`, multi-stage, `node:22-alpine`) and r
 
 ## 3. How the whole system fits together
 
+![EasyShop AWS EKS Architecture](./public/EasyShop-AWS-Infra.drawio.png)
+
+> Full architecture — VPC, subnets, EKS worker nodes with every namespace/pod, the shared
+> path-based ALB, GitOps loop (GitHub Actions + Argo CD) and observability stack.
+> Editable source: [`EasyShop-AWS-Infra.drawio`](./EasyShop-AWS-Infra.drawio) (open at [app.diagrams.net](https://app.diagrams.net)).
+
+Quick text version of the same flow:
+
 ```
    YOU (git push)                         AWS Cloud (ap-south-1)
         │                        ┌──────────────────────────────────────────┐
@@ -540,7 +548,7 @@ Confirm `targetRevision` in `argocd/easyshop-application.yaml` matches the branc
 | | |
 |---|---|
 | **Storefront** | ![EasyShop](./public/easyshop.JPG) |
-| **Architecture** | ![Diagram](./public/diagram-export.JPG) |
+| **Architecture** | ![Diagram](./public/EasyShop-AWS-Infra.drawio.png) |
 | **ArgoCD** | ![ArgoCD](./public/Argocd.JPG) |
 | **App capture** | ![Capture](./public/Capture.JPG) |
 | **AlertManager** | ![AlertManager](./public/alertManager.JPG) |
